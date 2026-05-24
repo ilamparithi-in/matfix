@@ -4,6 +4,7 @@ Almost — there is still one final section left from the original structure.
 
 Contains sections:
 21. Architectural Principles
+22. Attachment Support
 
 ---
 
@@ -269,3 +270,156 @@ Future features should integrate into the architecture without violating:
 * failure isolation principles
 
 Features should extend the architecture, not bypass it.
+
+---
+
+# 22. Attachment Support
+
+This section defines how the relay handles file and media attachments in both
+outbound (relay → Matrix) and inbound (Matrix → relay consumer) directions.
+
+---
+
+## Scope
+
+The relay supports the following Matrix attachment message types:
+
+* m.file — generic file
+* m.image — image
+* m.audio — audio
+* m.video — video
+
+Thumbnail generation and sticker events (m.sticker) are out of scope for this
+version.
+
+---
+
+## Media Manager
+
+A dedicated Media Manager component owns all attachment upload and
+encryption-for-upload logic.
+
+The Media Manager is a stateless, privileged internal component permitted to
+import the Matrix SDK directly, at the same tier as the Sync Manager and Crypto
+Manager.
+
+No other internal component may perform Matrix media uploads directly.
+
+The Engine delegates attachment preparation entirely to the Media Manager and
+does not inspect file bytes directly.
+
+---
+
+## Outbound Attachment Flow
+
+Outbound attachment delivery follows this lifecycle:
+
+1. The API caller submits a send request with type "file", base64-encoded file
+   bytes, a MIME type, a filename, and optional metadata hints (width, height,
+   duration in milliseconds).
+2. The API handler decodes the base64 bytes and enforces a maximum upload size
+   (default 50 MB, 52,428,800 bytes). Oversized payloads are rejected at the
+   API boundary before queue insertion.
+3. The Submission Manager enqueues a FileMessage job. The raw bytes are
+   serialised as base64-encoded JSON in the queue. This is acceptable for v1.
+4. A Worker pulls the job and calls Engine.Send with the FileMessage.
+5. The Engine delegates to the Media Manager to prepare the attachment:
+   a. The Media Manager checks whether the target room is encrypted via the
+      Matrix state store.
+   b. If encrypted: the bytes are encrypted using AES-CTR with a randomly
+      generated key and IV (via mautrix-go attachment.EncryptedFile). The
+      ciphertext is uploaded. The event content File field carries the MXC URI
+      and full key material.
+   c. If not encrypted: the bytes are uploaded directly and the event content
+      URL field carries the MXC URI.
+6. The Engine sends the m.room.message event with the prepared content.
+7. The MsgType is inferred from the MIME type: image/* → m.image, audio/* →
+   m.audio, video/* → m.video, all else → m.file.
+
+---
+
+## Encryption Transparency
+
+Callers always submit plaintext bytes regardless of room encryption state.
+
+The Media Manager determines whether encryption is required and handles it
+transparently, consistent with how the Engine handles E2EE for text messages.
+
+Callers are never exposed to MXC URIs or encryption key material on the
+outbound path.
+
+---
+
+## Inbound Attachment Flow
+
+When the Sync Manager receives an m.room.message event with an attachment
+message type, normalization proceeds as follows:
+
+1. The dispatcher identifies the message type as m.file, m.image, m.audio, or
+   m.video.
+2. The normalizer extracts attachment metadata:
+   a. For unencrypted attachments: the MXC URI from the URL field.
+   b. For encrypted attachments: the MXC URI and full key material (key, IV,
+      SHA-256 hash, version) from the File field.
+   c. File metadata from the Info block: MIME type, size, dimensions, duration.
+   d. Filename from the FileName field.
+3. The InboundMessageEvent published on the bus carries a non-nil Attachment
+   field containing all extracted metadata.
+
+The relay does not eagerly download or decrypt inbound attachments. Consumers
+receive the URL and key material and are responsible for downloading and
+decrypting the bytes themselves.
+
+This preserves the relay's role as a relay, avoids unnecessary bandwidth
+consumption, and is consistent with the principle of API simplicity with
+internal sophistication.
+
+---
+
+## API Surface
+
+### Outbound request
+
+The send and ask request bodies accept a new message type "file" with a nested
+FileAttachment object containing:
+
+* data — base64-encoded file bytes (required)
+* mime_type — MIME content type (required)
+* filename — display filename (optional)
+* width, height — pixel dimensions for image and video (optional)
+* duration — duration in milliseconds for audio and video (optional)
+
+### Inbound response
+
+The receive and ask response EventPayload carries a non-nil attachment field
+when the matched event is an attachment. The attachment object contains:
+
+* url — MXC URI for unencrypted attachments
+* encrypted_file — key material object for encrypted attachments, with fields
+  url, key, iv, sha256, and version; consumers download from encrypted_file.url
+  and decrypt using the provided key material
+* mime_type, filename, size, width, height, duration — metadata
+
+Exactly one of url or encrypted_file is populated.
+
+---
+
+## Size Limit
+
+The relay enforces a maximum attachment size at the API boundary before queue
+insertion.
+
+The default limit is 50 MB (52,428,800 bytes) of decoded plaintext.
+
+Homeservers independently enforce their own upload size limits. If a homeserver
+rejects an upload, the job follows the standard retry and dead-letter lifecycle.
+
+---
+
+## Ownership Rules
+
+* Only the Media Manager may call Matrix media upload APIs.
+* Only the Media Manager may encrypt attachment bytes for upload.
+* Only the Sync Manager normalizer may extract attachment metadata from
+  inbound events.
+* The Engine delegates attachment preparation entirely to the Media Manager.
