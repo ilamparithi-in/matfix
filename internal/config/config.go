@@ -25,6 +25,10 @@ type AccountConfig struct {
 	UserID        string `yaml:"user_id"`
 	AccessToken   string `yaml:"access_token"`
 	DeviceID      string `yaml:"device_id"`
+	// RecoveryKey is the optional SSSS recovery key used to restore Megolm
+	// session keys from the homeserver's key backup at startup.
+	// When empty, key backup restore is skipped for this account.
+	RecoveryKey string `yaml:"recovery_key"`
 }
 
 // DatabaseConfig selects the persistence back-end.

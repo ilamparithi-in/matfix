@@ -631,6 +631,73 @@ Encryption failures in one account must not affect unrelated accounts.
 
 ---
 
+## Key Backup and Recovery
+
+### Decision
+
+The relay supports read-only restore from Matrix Server-Side Key Backup
+(spec §11.12, algorithm `m.megolm_backup.v1.curve25519-aes-sha2`). Each account
+may optionally supply a recovery key in the configuration file. If present, the
+relay restores all backed-up Megolm session keys from the homeserver during
+startup, before the first sync begins. If absent, key backup restore is skipped
+for that account.
+
+Key backup *upload* (backing up new session keys to the server) is explicitly
+out of scope for v1.
+
+### Rationale
+
+The relay's crypto store is ephemeral relative to the user's broader device
+ecosystem. After a clean deployment or a database wipe, the local crypto store
+will be empty and historical encrypted events received during that gap cannot be
+decrypted. Key backup allows recovery of those Megolm sessions from the
+homeserver, enabling decryption of backlogged encrypted messages immediately
+after the relay comes online.
+
+Restricting v1 to restore-only avoids the complexity of tracking which sessions
+have already been uploaded and managing backup version conflicts.
+
+### Mechanism
+
+The user-supplied recovery key is an SSSS recovery key (base58-encoded,
+`EsS9 ...` format as defined by the Matrix spec). The restore sequence is:
+
+1. Fetch the default SSSS key metadata from the homeserver account data
+   (`m.secret_storage.default_key`).
+2. Decode the SSSS private key using `KeyMetadata.VerifyRecoveryKey`, which
+   validates the MAC and derives the 32-byte AES key.
+3. Retrieve the encrypted Megolm backup key from the homeserver account data
+   event `m.megolm_backup.v1` and decrypt it using the SSSS key.
+4. Construct the `backup.MegolmBackupKey` (X25519 ECDH key) from the decrypted
+   bytes.
+5. Call `OlmMachine.DownloadAndStoreLatestKeyBackup`, which downloads all
+   backed-up room key sessions from the latest backup version and imports them
+   into the local crypto store.
+
+If any step returns an error (e.g. no backup exists, key mismatch, network
+failure), the relay logs the failure and continues startup without the restored
+sessions. The service MUST NOT abort startup on key backup restore failure.
+
+### Configuration
+
+The recovery key is a sensitive secret. It is stored in the configuration file
+in the same manner as `access_token` — plain text, with the same file-permission
+recommendations applied to the config file (mode `0600`, root or dedicated
+service user ownership).
+
+The recovery key is per-account because each Matrix account has its own SSSS
+namespace and key backup. There is no global recovery key.
+
+### Security Constraints
+
+* The recovery key is never logged at any level.
+* The recovery key is never transmitted to any endpoint other than the account's
+  own homeserver (via standard Matrix Client-Server API calls).
+* The relay does not generate or rotate SSSS keys or key backup versions; it is
+  a consumer only.
+
+---
+
 # 14. Queue and Retry Semantics
 
 The relay uses persistent queue-based outbound delivery.
