@@ -109,6 +109,8 @@ type CorrelationStore interface {
 type APIKeyStore interface {
 	Insert(ctx context.Context, key APIKeyRow) error
 	GetByHash(ctx context.Context, hash string) (*APIKeyRow, error)
+	// GetByID returns the key record for the given ID, or nil if not found.
+	GetByID(ctx context.Context, id string) (*APIKeyRow, error)
 	List(ctx context.Context) ([]APIKeyRow, error)
 	// Delete removes a key record. Returns true if a row was deleted.
 	Delete(ctx context.Context, id string) (bool, error)
@@ -448,6 +450,20 @@ func (s *sqlAPIKeyStore) GetByHash(ctx context.Context, hash string) (*APIKeyRow
 	}
 	if err != nil {
 		return nil, fmt.Errorf("apikey_store: get by hash: %w", err)
+	}
+	return &k, nil
+}
+
+func (s *sqlAPIKeyStore) GetByID(ctx context.Context, id string) (*APIKeyRow, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+apiKeyCols+` FROM api_keys WHERE id = ?`, id,
+	)
+	k, err := scanAPIKey(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("apikey_store: get by id: %w", err)
 	}
 	return &k, nil
 }

@@ -3,8 +3,8 @@ package api
 import (
 	"net/http"
 
-	apires "github.com/ilamparithi-in/matfix/internal/api/response"
 	"github.com/ilamparithi-in/matfix/internal/account"
+	apires "github.com/ilamparithi-in/matfix/internal/api/response"
 )
 
 // liveHandler returns a handler for GET /health/live.
