@@ -1,4 +1,4 @@
-# Matrix Relay Daemon Specification — Part 3
+# Matrix Relay Daemon Specification - Part 3
 
 Contains sections:
 11. Receiving API
@@ -681,7 +681,7 @@ sessions. The service MUST NOT abort startup on key backup restore failure.
 ### Configuration
 
 The recovery key is a sensitive secret. It is stored in the configuration file
-in the same manner as `access_token` — plain text, with the same file-permission
+in the same manner as `access_token` - plain text, with the same file-permission
 recommendations applied to the config file (mode `0600`, root or dedicated
 service user ownership).
 

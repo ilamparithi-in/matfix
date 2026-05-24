@@ -36,7 +36,7 @@ func TestMigrate_Idempotent(t *testing.T) {
 	db.SetMaxOpenConns(1)
 	defer db.Close()
 
-	// Run twice — must not error.
+	// Run twice - must not error.
 	for i := 0; i < 2; i++ {
 		if err := persistence.Migrate(db); err != nil {
 			t.Fatalf("migrate run %d: %v", i+1, err)
@@ -228,15 +228,15 @@ func TestCorrelationStore_InsertAndGet(t *testing.T) {
 
 	now := time.Now().UnixMilli()
 	entry := persistence.CorrelationEntry{
-		ID:        "corr-1",
-		Type:      "ask",
-		AccountID: "acc1",
-		RoomID:    "!room:example.com",
+		ID:         "corr-1",
+		Type:       "ask",
+		AccountID:  "acc1",
+		RoomID:     "!room:example.com",
 		FilterJSON: `{}`,
-		TimeoutAt: now + 30000,
-		State:     "pending",
-		CreatedAt: now,
-		UpdatedAt: now,
+		TimeoutAt:  now + 30000,
+		State:      "pending",
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
 	if err := store.Insert(ctx, entry); err != nil {
 		t.Fatalf("Insert: %v", err)
@@ -264,15 +264,15 @@ func TestCorrelationStore_DeleteExpired(t *testing.T) {
 
 	past := time.Now().UnixMilli() - 10000
 	entry := persistence.CorrelationEntry{
-		ID:        "corr-2",
-		Type:      "receive",
-		AccountID: "acc1",
-		RoomID:    "!room:example.com",
+		ID:         "corr-2",
+		Type:       "receive",
+		AccountID:  "acc1",
+		RoomID:     "!room:example.com",
 		FilterJSON: `{}`,
-		TimeoutAt: past, // already timed out
-		State:     "pending",
-		CreatedAt: past,
-		UpdatedAt: past,
+		TimeoutAt:  past, // already timed out
+		State:      "pending",
+		CreatedAt:  past,
+		UpdatedAt:  past,
 	}
 	if err := store.Insert(ctx, entry); err != nil {
 		t.Fatalf("Insert: %v", err)

@@ -238,7 +238,7 @@ func keysCreateCmd() *cobra.Command {
 			fmt.Printf("Key ID:     %s\n", result.ID)
 			fmt.Printf("Name:       %s\n", result.Name)
 			fmt.Printf("Key:        %s\n", result.Key)
-			fmt.Printf("            (save this — it will not be shown again)\n")
+			fmt.Printf("            (save this - it will not be shown again)\n")
 			fmt.Printf("Created At: %s\n", fmtTime(result.CreatedAt))
 			return nil
 		},
@@ -348,7 +348,7 @@ func keysRotateCmd() *cobra.Command {
 			fmt.Printf("New Key ID: %s\n", result.ID)
 			fmt.Printf("Name:       %s\n", result.Name)
 			fmt.Printf("Key:        %s\n", result.Key)
-			fmt.Printf("            (save this — it will not be shown again)\n")
+			fmt.Printf("            (save this - it will not be shown again)\n")
 			fmt.Printf("Created At: %s\n", fmtTime(result.CreatedAt))
 			return nil
 		},

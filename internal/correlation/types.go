@@ -69,7 +69,7 @@ type ReceiveRequest struct {
 	Timeout time.Duration
 
 	// Limit is the maximum number of events to collect before resolving early.
-	// 0 means unlimited — the window closes on Timeout only.
+	// 0 means unlimited - the window closes on Timeout only.
 	Limit int
 }
 

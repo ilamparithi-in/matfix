@@ -51,7 +51,7 @@ func (rl *rateLimiter) middleware() func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			keyID := keyIDFromCtx(r.Context())
 			if keyID == "" {
-				// No key in context — auth middleware should have rejected first.
+				// No key in context - auth middleware should have rejected first.
 				next.ServeHTTP(w, r)
 				return
 			}

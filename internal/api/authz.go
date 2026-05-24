@@ -17,7 +17,7 @@ func RequireRoute(route string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			perms := permissionsFromCtx(r.Context())
 			if perms == nil {
-				// APIKeyMiddleware was not applied upstream — misconfiguration.
+				// APIKeyMiddleware was not applied upstream - misconfiguration.
 				writeError(w, http.StatusInternalServerError, "internal error", "internal_error")
 				return
 			}

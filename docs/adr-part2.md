@@ -1,4 +1,4 @@
-# Matrix Relay Daemon Specification — Part 2
+# Matrix Relay Daemon Specification - Part 2
 
 Contains sections:
 6. Event Flow Model

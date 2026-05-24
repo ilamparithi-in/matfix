@@ -13,11 +13,11 @@ func buildRouter(cfg Config, rl *rateLimiter) http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
 
-	// Health probes — unauthenticated.
+	// Health probes - unauthenticated.
 	r.Get("/health/live", liveHandler())
 	r.Get("/health/ready", readyHandler(cfg.Accounts))
 
-	// Prometheus metrics — unauthenticated.
+	// Prometheus metrics - unauthenticated.
 	r.Get("/metrics", metricsHandler())
 
 	// Authenticated, rate-limited API routes.

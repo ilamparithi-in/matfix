@@ -25,7 +25,7 @@ func checkFailures(accounts map[string]*AccountContext) error {
 	var reasons []string
 	for id, actx := range accounts {
 		if actx.IsAvailable() {
-			// At least one operational account — relay can continue.
+			// At least one operational account - relay can continue.
 			return nil
 		}
 		reasons = append(reasons, fmt.Sprintf("%s: %v", id, actx.err))

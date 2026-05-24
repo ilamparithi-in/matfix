@@ -14,7 +14,7 @@ import (
 // backup using the SSSS recovery key.
 //
 // When recoveryKey is empty the restore is skipped. Any error encountered at
-// any step is logged and the function returns without aborting startup — key
+// any step is logged and the function returns without aborting startup - key
 // backup restore is best-effort.
 func (m *CryptoManager) RestoreKeyBackup(ctx context.Context, recoveryKey string) {
 	if recoveryKey == "" {

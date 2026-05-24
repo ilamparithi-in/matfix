@@ -1,4 +1,4 @@
-# Matrix Relay Daemon Specification — Part 4
+# Matrix Relay Daemon Specification - Part 4
 
 Contains sections:
 16. API Authentication and Authorization

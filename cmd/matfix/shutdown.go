@@ -19,9 +19,9 @@ const shutdownTimeout = 30 * time.Second
 
 // shutdown performs an ordered graceful shutdown of all daemon components:
 //
-//  1. Stop the HTTP API server — no new requests accepted after this point.
+//  1. Stop the HTTP API server - no new requests accepted after this point.
 //  2. Stop the admin UNIX socket server.
-//  3. Drain the worker pool — wait for in-flight send jobs to finish.
+//  3. Drain the worker pool - wait for in-flight send jobs to finish.
 //  4. Stop all account sync loops and per-account components.
 //  5. Close the database connection.
 func shutdown(

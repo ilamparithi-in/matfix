@@ -27,7 +27,7 @@ func (m *CryptoManager) EncryptEvent(
 		return nil, fmt.Errorf("crypto: encrypt megolm for %s: %w", roomID, err)
 	}
 
-	// No outbound session — share keys with room members then retry.
+	// No outbound session - share keys with room members then retry.
 	members, err := m.stateStore.GetRoomJoinedOrInvitedMembers(ctx, roomID)
 	if err != nil {
 		return nil, fmt.Errorf("crypto: get room members for %s: %w", roomID, err)

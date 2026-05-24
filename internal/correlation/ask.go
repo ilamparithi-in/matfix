@@ -31,7 +31,7 @@ type activeAsk struct {
 //
 // When req.Filter.InReplyTo is empty and req.OutboundEventID is non-empty, the
 // ask defaults to matching events that carry an m.in_reply_to relation targeting
-// OutboundEventID — the preferred correlation strategy.
+// OutboundEventID - the preferred correlation strategy.
 func (m *CorrelationManager) RegisterAsk(ctx context.Context, req AskRequest) (*AskHandle, error) {
 	// Default InReplyTo to the outbound event ID.
 	if req.Filter.InReplyTo == "" && req.OutboundEventID != "" {

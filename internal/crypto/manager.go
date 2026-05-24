@@ -61,7 +61,7 @@ func New(ctx context.Context, cfg Config) (*CryptoManager, error) {
 		return nil, fmt.Errorf("crypto: upgrade state store schema: %w", err)
 	}
 
-	// # Crypto store — isolated per account + device pair.
+	// # Crypto store - isolated per account + device pair.
 	pickleKey := derivePickleKey(cfg.AccountCfg)
 	cryptoStore := mcrypto.NewSQLCryptoStore(
 		cryptoDB, nil,

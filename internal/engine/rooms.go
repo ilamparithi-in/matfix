@@ -16,9 +16,9 @@ import (
 // ResolveRoom maps a destination string to a Matrix room ID.
 //
 // Supported prefixes:
-//   - !roomid:server  — room ID, returned as-is
-//   - #alias:server   — room alias, resolved via the homeserver
-//   - @user:server    — user ID, an existing DM room is reused or a new one is created
+//   - !roomid:server  - room ID, returned as-is
+//   - #alias:server   - room alias, resolved via the homeserver
+//   - @user:server    - user ID, an existing DM room is reused or a new one is created
 func (c *Client) ResolveRoom(ctx context.Context, dest string) (id.RoomID, error) {
 	switch {
 	case strings.HasPrefix(dest, "!"):

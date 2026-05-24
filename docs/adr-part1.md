@@ -1,4 +1,4 @@
-# Matrix Relay Daemon Specification — Part 1
+# Matrix Relay Daemon Specification - Part 1
 
 Contains sections:
 

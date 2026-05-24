@@ -52,7 +52,7 @@ func New(cfg Config) *Server {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
 
-	// Key management — create, list, revoke, rotate.
+	// Key management - create, list, revoke, rotate.
 	r.Post("/keys", adminroutes.CreateKeyHandler(cfg.APIKeyStore))
 	r.Get("/keys", adminroutes.ListKeysHandler(cfg.APIKeyStore))
 	r.Delete("/keys/{id}", adminroutes.RevokeKeyHandler(cfg.APIKeyStore))

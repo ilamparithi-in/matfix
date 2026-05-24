@@ -1,4 +1,4 @@
-# Matrix Relay Daemon — State Machines and Flowcharts
+# Matrix Relay Daemon - State Machines and Flowcharts
 
 # 1. High-Level System Architecture Flow
 

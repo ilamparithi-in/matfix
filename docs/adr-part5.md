@@ -1,6 +1,4 @@
-Almost — there is still one final section left from the original structure.
-
-# Matrix Relay Daemon Specification — Part 5
+# Matrix Relay Daemon Specification - Part 5
 
 Contains sections:
 21. Architectural Principles
@@ -284,10 +282,10 @@ outbound (relay → Matrix) and inbound (Matrix → relay consumer) directions.
 
 The relay supports the following Matrix attachment message types:
 
-* m.file — generic file
-* m.image — image
-* m.audio — audio
-* m.video — video
+* m.file - generic file
+* m.image - image
+* m.audio - audio
+* m.video - video
 
 Thumbnail generation and sticker events (m.sticker) are out of scope for this
 version.
@@ -383,22 +381,22 @@ internal sophistication.
 The send and ask request bodies accept a new message type "file" with a nested
 FileAttachment object containing:
 
-* data — base64-encoded file bytes (required)
-* mime_type — MIME content type (required)
-* filename — display filename (optional)
-* width, height — pixel dimensions for image and video (optional)
-* duration — duration in milliseconds for audio and video (optional)
+* data - base64-encoded file bytes (required)
+* mime_type - MIME content type (required)
+* filename - display filename (optional)
+* width, height - pixel dimensions for image and video (optional)
+* duration - duration in milliseconds for audio and video (optional)
 
 ### Inbound response
 
 The receive and ask response EventPayload carries a non-nil attachment field
 when the matched event is an attachment. The attachment object contains:
 
-* url — MXC URI for unencrypted attachments
-* encrypted_file — key material object for encrypted attachments, with fields
+* url - MXC URI for unencrypted attachments
+* encrypted_file - key material object for encrypted attachments, with fields
   url, key, iv, sha256, and version; consumers download from encrypted_file.url
   and decrypt using the provided key material
-* mime_type, filename, size, width, height, duration — metadata
+* mime_type, filename, size, width, height, duration - metadata
 
 Exactly one of url or encrypted_file is populated.
 

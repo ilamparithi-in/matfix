@@ -26,7 +26,7 @@ func NewHealthChecker(db *persistence.DB, accounts *account.AccountManager) *Hea
 	return &HealthChecker{db: db, accounts: accounts}
 }
 
-// IsLive always returns true — the process is alive if it can call this method.
+// IsLive always returns true - the process is alive if it can call this method.
 func (h *HealthChecker) IsLive() bool { return true }
 
 // IsReady returns true when the DB is reachable and at least one account is

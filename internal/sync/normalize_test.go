@@ -43,7 +43,7 @@ func (b *captureBus) lastMessage() (bus.InboundMessageEvent, bool) {
 }
 
 // newTestManager builds a SyncManager with stub dependencies.
-// client, syncStore, decrypter and cancel are left nil — dispatchMessage does not use them.
+// client, syncStore, decrypter and cancel are left nil - dispatchMessage does not use them.
 func newTestManager(b *captureBus) *SyncManager {
 	return &SyncManager{
 		accountID:  "test-account",
@@ -187,7 +187,7 @@ func TestDispatchMessage_EncryptedAttachment(t *testing.T) {
 		t.Error("EncryptedFile.IV is empty")
 	}
 	if enc.SHA256 == "" {
-		t.Error("EncryptedFile.SHA256 is empty — key material not propagated")
+		t.Error("EncryptedFile.SHA256 is empty - key material not propagated")
 	}
 	if enc.Version == "" {
 		t.Error("EncryptedFile.Version is empty")

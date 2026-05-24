@@ -188,12 +188,12 @@ func TestDeadLetter_AfterMaxRetries(t *testing.T) {
 			t.Fatalf("ScheduleRetry attempt %d: %v", i, retryErr)
 		}
 		if i < maxRetries {
-			// Still within retries — expect job to be rescheduled.
+			// Still within retries - expect job to be rescheduled.
 			if !retried {
 				t.Errorf("attempt %d: expected retried=true, got false", i)
 			}
 		} else {
-			// Last attempt — expect dead_letter.
+			// Last attempt - expect dead_letter.
 			if retried {
 				t.Errorf("attempt %d: expected retried=false (dead_letter), got true", i)
 			}

@@ -45,7 +45,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// # Observability — set up logging first so all subsequent output is structured
+	// # Observability - set up logging first so all subsequent output is structured
 
 	observability.Setup(cfg.Logging)
 

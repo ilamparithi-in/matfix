@@ -17,9 +17,9 @@ import (
 
 // startAccount creates and starts the full per-account component tree:
 //
-//  1. Engine client — wraps the mautrix.Client for this account.
-//  2. Crypto manager — initialises OlmMachine, upgrades schemas, restores key backup.
-//  3. Sync manager — starts the /sync loop using the crypto manager as a Decrypter.
+//  1. Engine client - wraps the mautrix.Client for this account.
+//  2. Crypto manager - initialises OlmMachine, upgrades schemas, restores key backup.
+//  3. Sync manager - starts the /sync loop using the crypto manager as a Decrypter.
 //
 // On any error the whole account is considered failed and the error is returned.
 // The caller is responsible for recording the failure in an AccountContext.

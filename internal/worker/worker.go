@@ -43,7 +43,7 @@ func runWorker(ctx context.Context, cfg Config) {
 			continue
 		}
 
-		// All accounts idle — wait for a signal or fallback tick.
+		// All accounts idle - wait for a signal or fallback tick.
 		select {
 		case <-ctx.Done():
 			return

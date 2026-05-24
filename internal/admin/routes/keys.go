@@ -33,7 +33,7 @@ func writeError(w http.ResponseWriter, status int, message, code string) {
 
 // # Request / response types
 
-// KeyPermissions mirrors api.Permissions — same JSON shape so the stored
+// KeyPermissions mirrors api.Permissions - same JSON shape so the stored
 // permissions_json is readable by both the API auth middleware and the admin
 // routes without coupling the two packages.
 type KeyPermissions struct {
