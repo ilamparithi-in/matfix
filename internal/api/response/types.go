@@ -29,13 +29,39 @@ type ReceiveResponse struct {
 // EventPayload represents a matched inbound event returned in receive or ask
 // responses.
 type EventPayload struct {
-	EventID   string `json:"event_id"`
-	AccountID string `json:"account_id"`
-	RoomID    string `json:"room_id"`
-	SenderID  string `json:"sender_id,omitempty"`
-	Type      string `json:"type"`
-	Body      string `json:"body,omitempty"`
-	Timestamp int64  `json:"timestamp"` // Unix milliseconds
+	EventID    string             `json:"event_id"`
+	AccountID  string             `json:"account_id"`
+	RoomID     string             `json:"room_id"`
+	SenderID   string             `json:"sender_id,omitempty"`
+	Type       string             `json:"type"`
+	Body       string             `json:"body,omitempty"`
+	Timestamp  int64              `json:"timestamp"` // Unix milliseconds
+	Attachment *AttachmentPayload `json:"attachment,omitempty"`
+}
+
+// AttachmentPayload surfaces the MXC URL and optional key material for file,
+// image, audio, and video messages.
+type AttachmentPayload struct {
+	URL           string                `json:"url,omitempty"`
+	MimeType      string                `json:"mime_type,omitempty"`
+	Filename      string                `json:"filename,omitempty"`
+	Size          int                   `json:"size,omitempty"`
+	Width         int                   `json:"width,omitempty"`
+	Height        int                   `json:"height,omitempty"`
+	Duration      int                   `json:"duration,omitempty"`
+	// EncryptedFile is non-nil for attachments from encrypted rooms.
+	// Consumers are responsible for downloading and decrypting the blob.
+	EncryptedFile *EncryptedFilePayload `json:"encrypted_file,omitempty"`
+}
+
+// EncryptedFilePayload carries the key material for client-side decryption of
+// an encrypted Matrix attachment.
+type EncryptedFilePayload struct {
+	URL     string `json:"url"`
+	Key     string `json:"key"`     // base64url-encoded AES-256-CTR key
+	IV      string `json:"iv"`      // base64-encoded init vector
+	SHA256  string `json:"sha256"`  // base64-encoded SHA-256 hash of ciphertext
+	Version string `json:"version"` // encryption version (e.g. "v2")
 }
 
 // # Error

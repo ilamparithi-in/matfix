@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -84,6 +85,32 @@ func payloadToSendRequest(p apireq.MessagePayload) (engine.SendRequest, error) {
 		return engine.Redaction{
 			TargetEventID: id.EventID(p.TargetEventID),
 			Reason:        p.Reason,
+		}, nil
+	case "file":
+		if p.File == nil {
+			return nil, fmt.Errorf("message type \"file\" requires a file attachment")
+		}
+		if p.File.MimeType == "" {
+			return nil, fmt.Errorf("file attachment requires mime_type")
+		}
+		if p.File.Data == "" {
+			return nil, fmt.Errorf("file attachment requires data")
+		}
+		raw, err := base64.StdEncoding.DecodeString(p.File.Data)
+		if err != nil {
+			return nil, fmt.Errorf("file attachment data: invalid base64: %w", err)
+		}
+		const maxFileSize = 52_428_800 // 50 MiB
+		if len(raw) > maxFileSize {
+			return nil, fmt.Errorf("file attachment exceeds 50 MiB limit (%d bytes decoded)", len(raw))
+		}
+		return engine.FileMessage{
+			Filename: p.File.Filename,
+			MimeType: p.File.MimeType,
+			Data:     raw,
+			Width:    p.File.Width,
+			Height:   p.File.Height,
+			Duration: p.File.Duration,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unknown message type: %q", p.Type)

@@ -50,8 +50,33 @@ type InboundMessageEvent struct {
 	FormattedBody string
 	MsgType       string
 	// InReplyTo holds the event ID this message is a reply to, if any.
-	InReplyTo string
-	Timestamp time.Time
+	InReplyTo  string
+	Attachment *InboundAttachment
+	Timestamp  time.Time
+}
+
+// InboundAttachment surfaces the MXC URL and optional key material for file,
+// image, audio, and video messages. URL is empty when the attachment is encrypted.
+type InboundAttachment struct {
+	URL      string
+	MimeType string
+	Filename string
+	Size     int
+	Width    int
+	Height   int
+	Duration int
+	// EncryptedFile is non-nil for attachments from encrypted rooms.
+	EncryptedFile *InboundEncryptedFile
+}
+
+// InboundEncryptedFile carries the key material needed to decrypt an inbound
+// attachment. Consumers are responsible for downloading and decrypting the blob.
+type InboundEncryptedFile struct {
+	URL     string // MXC URI of the ciphertext blob
+	Key     string // base64url-encoded AES-256-CTR key (JWK "k" field)
+	IV      string // base64-encoded initialisation vector
+	SHA256  string // base64-encoded SHA-256 hash of the ciphertext
+	Version string // encryption version (e.g. "v2")
 }
 
 // InboundReactionEvent carries a received m.reaction event.

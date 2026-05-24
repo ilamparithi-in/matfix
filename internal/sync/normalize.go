@@ -132,6 +132,31 @@ func (m *SyncManager) dispatchMessage(ctx context.Context, roomID string, evt *e
 		if rel != nil {
 			inReplyTo = string(rel.GetReplyTo())
 		}
+		var attach *bus.InboundAttachment
+		switch content.MsgType {
+		case event.MsgFile, event.MsgImage, event.MsgAudio, event.MsgVideo:
+			attach = &bus.InboundAttachment{
+				Filename: content.GetFileName(),
+			}
+			if content.Info != nil {
+				attach.MimeType = content.Info.MimeType
+				attach.Size = content.Info.Size
+				attach.Width = content.Info.Width
+				attach.Height = content.Info.Height
+				attach.Duration = content.Info.Duration
+			}
+			if content.File != nil {
+				attach.EncryptedFile = &bus.InboundEncryptedFile{
+					URL:     string(content.File.URL),
+					Key:     content.File.Key.Key,
+					IV:      content.File.InitVector,
+					SHA256:  content.File.Hashes.SHA256,
+					Version: content.File.Version,
+				}
+			} else {
+				attach.URL = string(content.URL)
+			}
+		}
 		m.bus.Publish(bus.EventEnvelope{
 			Type:      bus.EventInboundMessage,
 			AccountID: m.accountID,
@@ -143,6 +168,7 @@ func (m *SyncManager) dispatchMessage(ctx context.Context, roomID string, evt *e
 				FormattedBody: content.FormattedBody,
 				MsgType:       string(content.MsgType),
 				InReplyTo:     inReplyTo,
+				Attachment:    attach,
 				Timestamp:     time.UnixMilli(evt.Timestamp),
 			},
 		})

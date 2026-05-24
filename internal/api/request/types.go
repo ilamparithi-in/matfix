@@ -37,7 +37,7 @@ type ReceiveRequest struct {
 // MessagePayload is a discriminated union of outbound message types.
 // The Type field selects which other fields apply.
 //
-// Supported types: "text", "html", "reply", "reaction", "edit", "redaction".
+// Supported types: "text", "html", "reply", "reaction", "edit", "redaction", "file".
 type MessagePayload struct {
 	// Type selects the message variant.
 	Type string `json:"type"`
@@ -60,6 +60,31 @@ type MessagePayload struct {
 
 	// Reason is an optional redaction reason. Used by: redaction.
 	Reason string `json:"reason,omitempty"`
+
+	// File is the attachment payload. Used by: file.
+	File *FileAttachment `json:"file,omitempty"`
+}
+
+// FileAttachment carries the base64-encoded file bytes and optional media
+// metadata for a "file" message payload.
+type FileAttachment struct {
+	// Data is the base64-encoded file content (standard encoding, no line breaks).
+	Data string `json:"data"`
+
+	// MimeType is the MIME type of the file (e.g. "image/png", "application/pdf").
+	MimeType string `json:"mime_type"`
+
+	// Filename is the display name for the attachment.
+	Filename string `json:"filename"`
+
+	// Width is the pixel width for images and videos.
+	Width int `json:"width,omitempty"`
+
+	// Height is the pixel height for images and videos.
+	Height int `json:"height,omitempty"`
+
+	// Duration is the playback duration in milliseconds for audio and video.
+	Duration int `json:"duration,omitempty"`
 }
 
 // # Filter spec

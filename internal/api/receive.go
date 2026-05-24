@@ -108,6 +108,27 @@ func envelopeToPayload(env bus.EventEnvelope) apires.EventPayload {
 		p.SenderID = evt.SenderID
 		p.Body = evt.Body
 		p.Timestamp = evt.Timestamp.UnixMilli()
+		if evt.Attachment != nil {
+			ap := &apires.AttachmentPayload{
+				URL:      evt.Attachment.URL,
+				MimeType: evt.Attachment.MimeType,
+				Filename: evt.Attachment.Filename,
+				Size:     evt.Attachment.Size,
+				Width:    evt.Attachment.Width,
+				Height:   evt.Attachment.Height,
+				Duration: evt.Attachment.Duration,
+			}
+			if evt.Attachment.EncryptedFile != nil {
+				ap.EncryptedFile = &apires.EncryptedFilePayload{
+					URL:     evt.Attachment.EncryptedFile.URL,
+					Key:     evt.Attachment.EncryptedFile.Key,
+					IV:      evt.Attachment.EncryptedFile.IV,
+					SHA256:  evt.Attachment.EncryptedFile.SHA256,
+					Version: evt.Attachment.EncryptedFile.Version,
+				}
+			}
+			p.Attachment = ap
+		}
 	case bus.InboundReactionEvent:
 		p.EventID = evt.EventID
 		p.SenderID = evt.SenderID
