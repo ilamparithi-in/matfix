@@ -7,7 +7,7 @@ import (
 )
 
 // InferMsgType returns the Matrix message type for the given MIME type.
-// image/* → MsgImage, audio/* → MsgAudio, video/* → MsgVideo, else → MsgFile.
+// image/* -> MsgImage, audio/* -> MsgAudio, video/* -> MsgVideo, else -> MsgFile.
 func InferMsgType(mimeType string) event.MessageType {
 	switch {
 	case strings.HasPrefix(mimeType, "image/"):

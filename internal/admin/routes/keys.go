@@ -215,7 +215,7 @@ func RevokeKeyHandler(store persistence.APIKeyStore) http.HandlerFunc {
 // It revokes the identified key and creates a replacement with the same name
 // and permissions. The new plaintext key is returned exactly once.
 //
-// The operation is performed as two sequential writes (revoke → insert). If the
+// The operation is performed as two sequential writes (revoke -> insert). If the
 // insert fails after revoke, the caller may create a fresh key manually. The
 // original key is considered revoked regardless.
 func RotateKeyHandler(store persistence.APIKeyStore) http.HandlerFunc {

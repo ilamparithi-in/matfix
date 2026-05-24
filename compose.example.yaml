@@ -1,0 +1,61 @@
+## matfix - docker compose
+##
+## Quick start:
+##   1. cp config.example.yaml config.yaml  && edit config.yaml
+##   2. docker compose up -d
+##   3. docker compose exec matfix matfixctl keys create --name my-key --routes send,receive,ask
+##
+## The admin socket is bind-mounted from ./run/matfix/admin.sock so matfixctl
+## can reach the daemon from the host or a sidecar container without network exposure.
+
+services:
+  matfix:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: matfix:latest
+    container_name: matfix
+    restart: unless-stopped
+
+    # Config file - copy config.example.yaml -> config.yaml and fill in your values.
+    volumes:
+      - ./config.yaml:/etc/matfix/config.yaml:ro
+      # SQLite database - persist across restarts.
+      - matfix-data:/data
+      # Admin UNIX socket - shared with host so matfixctl can connect.
+      - ./run/matfix:/run/matfix
+
+    ports:
+      # HTTP API - put a reverse proxy (nginx / Caddy) in front for TLS.
+      - "127.0.0.1:8080:8080"
+      # Prometheus metrics scrape endpoint - keep off the public interface.
+      - "127.0.0.1:9090:9090"
+
+    environment:
+      # Environment variables override config file fields (MATFIX_ prefix).
+      # Prefer injecting secrets this way rather than editing config.yaml in CI.
+      # MATFIX_ACCOUNTS_0_ACCESS_TOKEN: "syt_override_me"
+      TZ: UTC
+
+    # Drop all Linux capabilities - the daemon needs none.
+    cap_drop:
+      - ALL
+
+    # Read-only root FS; only the data volume and socket dir are writable.
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+
+    security_opt:
+      - no-new-privileges:true
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  matfix-data:
+    driver: local

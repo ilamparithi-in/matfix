@@ -1,0 +1,65 @@
+## matfix - example configuration
+## Copy to config.yaml and fill in your values before starting the daemon.
+
+# HTTP API listener (plain HTTP - put a reverse proxy in front for TLS).
+server:
+  bind_addr: "0.0.0.0:8080"
+
+# One entry per Matrix account the relay manages.
+# Multiple accounts are supported; each is isolated on failure.
+accounts:
+  - id: "bot1"
+    homeserver_url: "https://matrix.example.com"
+    user_id: "@bot1:example.com"
+    access_token: "syt_CHANGE_ME"
+    device_id: "MATFIX01"
+    # Optional: SSSS recovery key to restore Megolm sessions from key backup at
+    # startup. Leave empty to skip key backup restore for this account.
+    recovery_key: ""
+
+  # Uncomment and duplicate for additional accounts:
+  # - id: "bot2"
+  #   homeserver_url: "https://matrix.example.com"
+  #   user_id: "@bot2:example.com"
+  #   access_token: "syt_CHANGE_ME_2"
+  #   device_id: "MATFIX02"
+  #   recovery_key: ""
+
+# SQLite database used for all persistent state.
+database:
+  driver: "sqlite"
+  path: "/data/matfix.db"
+
+# Privileged admin UNIX socket (key management, inspection).
+# Access is controlled by filesystem permissions on the socket file.
+admin:
+  socket_path: "/run/matfix/admin.sock"
+
+# Outbound delivery retry policy.
+retry_policy:
+  max_retries: 5
+  backoff_policy: "exponential"   # "exponential" | "linear"
+  initial_interval: "5s"
+  max_interval: "5m"
+  dead_letter_threshold: 5        # Move to dead-letter after this many failures
+
+# Outbound worker pool.
+queue:
+  concurrency: 4       # Number of parallel send workers
+  depth_limit: 1000    # Max jobs allowed in the queue before back-pressure
+
+# End-to-end encryption settings.
+crypto:
+  trust_policy: "tofu"              # "tofu" | "allowlist"
+  undecryptable_handling: "log"     # "log" | "ignore"
+
+# Structured logging.
+logging:
+  level: "info"           # "debug" | "info" | "warn" | "error"
+  format: "json"          # "json" | "text"
+  redact: true            # Redact sensitive fields (tokens, keys) in log output
+
+# Prometheus metrics and health check endpoints.
+observability:
+  metrics_bind: "0.0.0.0:9090"   # Prometheus scrape endpoint
+  health_path: "/health"          # Prefix for /health/live and /health/ready

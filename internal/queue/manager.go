@@ -115,7 +115,7 @@ func (m *QueueManager) PullNext(ctx context.Context, accountID string) (*Job, er
 // Transition sets the state of jobID to newState.
 func (m *QueueManager) Transition(ctx context.Context, jobID string, newState State) error {
 	if err := m.store.UpdateState(ctx, jobID, string(newState)); err != nil {
-		return fmt.Errorf("queue: transition %s → %s: %w", jobID, newState, err)
+		return fmt.Errorf("queue: transition %s -> %s: %w", jobID, newState, err)
 	}
 	return nil
 }

@@ -274,7 +274,7 @@ Features should extend the architecture, not bypass it.
 # 22. Attachment Support
 
 This section defines how the relay handles file and media attachments in both
-outbound (relay → Matrix) and inbound (Matrix → relay consumer) directions.
+outbound (relay -> Matrix) and inbound (Matrix -> relay consumer) directions.
 
 ---
 
@@ -331,8 +331,8 @@ Outbound attachment delivery follows this lifecycle:
    c. If not encrypted: the bytes are uploaded directly and the event content
       URL field carries the MXC URI.
 6. The Engine sends the m.room.message event with the prepared content.
-7. The MsgType is inferred from the MIME type: image/* → m.image, audio/* →
-   m.audio, video/* → m.video, all else → m.file.
+7. The MsgType is inferred from the MIME type: image/* -> m.image, audio/* ->
+   m.audio, video/* -> m.video, all else -> m.file.
 
 ---
 

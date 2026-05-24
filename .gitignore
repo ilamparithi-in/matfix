@@ -33,3 +33,7 @@ bin/
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# for local purposes
+compose.yaml
+config.yaml

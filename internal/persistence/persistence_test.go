@@ -101,7 +101,7 @@ func newEntry(id, accountID string) persistence.QueueEntry {
 		RoomID:      "!room:example.com",
 		Payload:     `{"type":"text","body":"hello"}`,
 		State:       "queued",
-		ScheduledAt: now - 1, // in the past → immediately eligible
+		ScheduledAt: now - 1, // in the past -> immediately eligible
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
