@@ -10,6 +10,7 @@ import (
 	"github.com/ilamparithi-in/matfix/internal/config"
 	"github.com/ilamparithi-in/matfix/internal/crypto"
 	"github.com/ilamparithi-in/matfix/internal/engine"
+	"github.com/ilamparithi-in/matfix/internal/media"
 	"github.com/ilamparithi-in/matfix/internal/persistence"
 	syncsvc "github.com/ilamparithi-in/matfix/internal/sync"
 )
@@ -40,6 +41,9 @@ func startAccount(
 	if err != nil {
 		return nil, fmt.Errorf("account %s: init client: %w", acfg.ID, err)
 	}
+
+	// # Media manager
+	client.SetMediaManager(media.NewManager(client.Underlying()))
 
 	// # Crypto manager
 	cm, err := crypto.New(ctx, crypto.Config{

@@ -48,9 +48,25 @@ type Redaction struct {
 	Reason        string
 }
 
+// FileMessage sends an m.room.message event with a file attachment.
+// Data holds the raw file bytes; the engine encrypts and uploads them
+// automatically for encrypted rooms.
+// Width and Height are in pixels (image/video); Duration is in milliseconds
+// (audio/video). Size overrides the reported file size when non-zero.
+type FileMessage struct {
+	Filename string
+	MimeType string
+	Data     []byte
+	Width    int
+	Height   int
+	Duration int
+	Size     int
+}
+
 func (TextMessage) isSendRequest() {}
 func (HTMLMessage) isSendRequest() {}
 func (Reply) isSendRequest()       {}
 func (Reaction) isSendRequest()    {}
 func (Edit) isSendRequest()        {}
 func (Redaction) isSendRequest()   {}
+func (FileMessage) isSendRequest() {}

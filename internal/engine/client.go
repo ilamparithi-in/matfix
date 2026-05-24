@@ -5,6 +5,8 @@ import (
 
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/id"
+
+	"github.com/ilamparithi-in/matfix/internal/media"
 )
 
 // # Config
@@ -28,6 +30,7 @@ type ClientConfig struct {
 type Client struct {
 	accountID string
 	mx        *mautrix.Client
+	media     *media.Manager
 }
 
 // NewClient creates a Client for the given account configuration.
@@ -55,3 +58,7 @@ func (c *Client) UserID() id.UserID { return c.mx.UserID }
 // Underlying returns the underlying mautrix.Client.
 // Only internal/sync and internal/crypto should call this method.
 func (c *Client) Underlying() *mautrix.Client { return c.mx }
+
+// SetMediaManager attaches a media.Manager to the client so that FileMessage
+// send requests can upload and optionally encrypt attachments.
+func (c *Client) SetMediaManager(m *media.Manager) { c.media = m }

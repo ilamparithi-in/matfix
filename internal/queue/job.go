@@ -37,6 +37,7 @@ const (
 	payloadReaction    payloadType = "reaction"
 	payloadEdit        payloadType = "edit"
 	payloadRedaction   payloadType = "redaction"
+	payloadFileMessage payloadType = "file_message"
 )
 
 // encodedPayload is the on-disk JSON representation of a send request.
@@ -61,6 +62,8 @@ func encodePayload(req engine.SendRequest) (string, error) {
 		pt = payloadEdit
 	case engine.Redaction:
 		pt = payloadRedaction
+	case engine.FileMessage:
+		pt = payloadFileMessage
 	default:
 		return "", fmt.Errorf("queue: unknown send request type %T", req)
 	}
@@ -117,6 +120,12 @@ func decodePayload(raw string) (engine.SendRequest, error) {
 		var v engine.Redaction
 		if err := json.Unmarshal(ep.Content, &v); err != nil {
 			return nil, fmt.Errorf("queue: decode redaction: %w", err)
+		}
+		return v, nil
+	case payloadFileMessage:
+		var v engine.FileMessage
+		if err := json.Unmarshal(ep.Content, &v); err != nil {
+			return nil, fmt.Errorf("queue: decode file_message: %w", err)
 		}
 		return v, nil
 	default:

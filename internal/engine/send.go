@@ -7,6 +7,8 @@ import (
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
+
+	"github.com/ilamparithi-in/matfix/internal/media"
 )
 
 // # Send
@@ -76,6 +78,21 @@ func (c *Client) Send(ctx context.Context, roomID id.RoomID, req SendRequest) (i
 			return "", fmt.Errorf("redact %s in %s: %w", r.TargetEventID, roomID, err)
 		}
 		return resp.EventID, nil
+
+	case FileMessage:
+		if c.media == nil {
+			return "", fmt.Errorf("send file to %s: media manager not configured", roomID)
+		}
+		content, err := c.media.PrepareAttachment(ctx, roomID, r.Data, r.MimeType, r.Filename, media.Hints{
+			Width:    r.Width,
+			Height:   r.Height,
+			Duration: r.Duration,
+			Size:     r.Size,
+		})
+		if err != nil {
+			return "", fmt.Errorf("prepare attachment for %s: %w", roomID, err)
+		}
+		return c.sendContent(ctx, roomID, event.EventMessage, &content)
 
 	default:
 		return "", fmt.Errorf("unknown send request type %T", req)
