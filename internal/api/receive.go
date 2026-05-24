@@ -1,0 +1,137 @@
+package api
+
+import (
+	"encoding/json"
+	"net/http"
+	"time"
+
+	apireq "github.com/ilamparithi-in/matfix/internal/api/request"
+	apires "github.com/ilamparithi-in/matfix/internal/api/response"
+	"github.com/ilamparithi-in/matfix/internal/bus"
+	"github.com/ilamparithi-in/matfix/internal/correlation"
+)
+
+// receiveHandler returns the handler for POST /v1/receive.
+//
+// The handler registers a receive subscription and long-polls until the window
+// closes (timeout or event limit) or the client disconnects. The response is
+// always 200 OK; TimedOut=true indicates the window closed without any events.
+func receiveHandler(mgr *correlation.CorrelationManager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req apireq.ReceiveRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body", "bad_request")
+			return
+		}
+
+		if req.AccountID == "" {
+			writeError(w, http.StatusBadRequest, "account_id is required", "bad_request")
+			return
+		}
+		if req.TimeoutSeconds <= 0 {
+			writeError(w, http.StatusBadRequest, "timeout_seconds must be > 0", "bad_request")
+			return
+		}
+		if !CheckAccount(r.Context(), req.AccountID) {
+			writeError(w, http.StatusForbidden, "API key does not allow account: "+req.AccountID, "forbidden")
+			return
+		}
+		if !CheckRoom(r.Context(), req.Filter.RoomID) {
+			writeError(w, http.StatusForbidden, "API key does not allow room: "+req.Filter.RoomID, "forbidden")
+			return
+		}
+
+		timeout := time.Duration(req.TimeoutSeconds) * time.Second
+		handle, err := mgr.RegisterReceive(r.Context(), correlation.ReceiveRequest{
+			AccountID: req.AccountID,
+			Filter:    requestFilterToCorrelation(req.Filter),
+			Timeout:   timeout,
+			Limit:     req.Limit,
+		})
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error(), "bad_request")
+			return
+		}
+
+		events, err := handle.Wait(r.Context())
+		if err != nil {
+			// Client disconnected or context cancelled.
+			writeError(w, http.StatusRequestTimeout, "request cancelled", "cancelled")
+			return
+		}
+
+		resp := apires.ReceiveResponse{
+			Events:   envelopesToPayloads(events),
+			TimedOut: len(events) == 0,
+		}
+		writeJSON(w, http.StatusOK, resp)
+	}
+}
+
+// requestFilterToCorrelation maps an API FilterSpec to a correlation.FilterSpec.
+func requestFilterToCorrelation(f apireq.FilterSpec) correlation.FilterSpec {
+	var et bus.EventType
+	if f.EventType != "" {
+		et = bus.EventType(f.EventType)
+	}
+	return correlation.FilterSpec{
+		RoomID:    f.RoomID,
+		SenderID:  f.SenderID,
+		EventType: et,
+		InReplyTo: f.InReplyTo,
+		BodyRegex: f.BodyRegex,
+	}
+}
+
+// envelopesToPayloads converts a slice of bus.EventEnvelope to response payloads.
+func envelopesToPayloads(envs []bus.EventEnvelope) []apires.EventPayload {
+	if len(envs) == 0 {
+		return []apires.EventPayload{}
+	}
+	out := make([]apires.EventPayload, 0, len(envs))
+	for _, env := range envs {
+		out = append(out, envelopeToPayload(env))
+	}
+	return out
+}
+
+// envelopeToPayload converts one bus.EventEnvelope to a response EventPayload.
+func envelopeToPayload(env bus.EventEnvelope) apires.EventPayload {
+	p := apires.EventPayload{
+		AccountID: env.AccountID,
+		RoomID:    env.RoomID,
+		Type:      string(env.Type),
+	}
+	switch evt := env.Payload.(type) {
+	case bus.InboundMessageEvent:
+		p.EventID = evt.EventID
+		p.SenderID = evt.SenderID
+		p.Body = evt.Body
+		p.Timestamp = evt.Timestamp.UnixMilli()
+	case bus.InboundReactionEvent:
+		p.EventID = evt.EventID
+		p.SenderID = evt.SenderID
+		p.Body = evt.Key
+		p.Timestamp = evt.Timestamp.UnixMilli()
+	case bus.InboundEditEvent:
+		p.EventID = evt.EventID
+		p.SenderID = evt.SenderID
+		p.Body = evt.NewBody
+		p.Timestamp = evt.Timestamp.UnixMilli()
+	case bus.InboundRedactionEvent:
+		p.EventID = evt.EventID
+		p.SenderID = evt.SenderID
+		p.Body = evt.Reason
+		p.Timestamp = evt.Timestamp.UnixMilli()
+	case bus.InboundMembershipEvent:
+		p.EventID = evt.EventID
+		p.SenderID = evt.UserID
+		p.Body = evt.Membership
+		p.Timestamp = evt.Timestamp.UnixMilli()
+	case bus.InboundReceiptEvent:
+		p.EventID = evt.EventID
+		p.SenderID = evt.UserID
+		p.Timestamp = evt.Timestamp.UnixMilli()
+	}
+	return p
+}
