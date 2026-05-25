@@ -27,16 +27,10 @@ RUN apt-get update && \
 # Non-root runtime user.
 RUN groupadd -r matfix && useradd -r -g matfix -s /sbin/nologin matfix
 
-# Persistent data volume - SQLite database lives here.
-RUN install -d -o matfix -g matfix -m 0750 /data
-
-# Admin socket directory - bind-mount or volume as needed.
-RUN install -d -o matfix -g matfix -m 0750 /run/matfix
-
 COPY --from=builder /out/matfix    /usr/local/bin/matfix
 COPY --from=builder /out/matfixctl /usr/local/bin/matfixctl
-
-USER matfix
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 # HTTP API
 EXPOSE 8080
@@ -46,5 +40,6 @@ EXPOSE 9090
 # Config file must be provided at /etc/matfix/config.yaml (bind mount or secret).
 VOLUME ["/data", "/run/matfix"]
 
-ENTRYPOINT ["/usr/local/bin/matfix"]
-CMD ["--config", "/etc/matfix/config.yaml"]
+# entrypoint.sh runs as root, fixes mount-point ownership, then execs as matfix.
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/usr/local/bin/matfix", "--config", "/etc/matfix/config.yaml"]
