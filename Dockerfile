@@ -24,13 +24,20 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates curl && \
     rm -rf /var/lib/apt/lists/*
 
-# Non-root runtime user.
-RUN groupadd -r matfix && useradd -r -g matfix -s /sbin/nologin matfix
+# Non-root runtime user - pinned UID/GID so volume ownership is stable across
+# base image upgrades.
+RUN groupadd -r -g 10670 matfix && useradd -r -u 10670 -g 10670 -s /sbin/nologin matfix
+
+# Persistent data volume - SQLite database lives here.
+RUN install -d -o 10670 -g 10670 -m 0750 /data
+
+# Admin socket directory.
+RUN install -d -o 10670 -g 10670 -m 0750 /run/matfix
 
 COPY --from=builder /out/matfix    /usr/local/bin/matfix
 COPY --from=builder /out/matfixctl /usr/local/bin/matfixctl
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+
+USER 10670:10670
 
 # HTTP API
 EXPOSE 8080
@@ -40,6 +47,5 @@ EXPOSE 9090
 # Config file must be provided at /etc/matfix/config.yaml (bind mount or secret).
 VOLUME ["/data", "/run/matfix"]
 
-# entrypoint.sh runs as root, fixes mount-point ownership, then execs as matfix.
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/usr/local/bin/matfix", "--config", "/etc/matfix/config.yaml"]
+ENTRYPOINT ["/usr/local/bin/matfix"]
+CMD ["--config", "/etc/matfix/config.yaml"]

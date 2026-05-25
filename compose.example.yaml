@@ -5,8 +5,8 @@
 ##   2. docker compose up -d
 ##   3. docker compose exec matfix matfixctl keys create --name my-key --routes send,receive,ask
 ##
-## The admin socket is bind-mounted from ./run/matfix/admin.sock so matfixctl
-## can reach the daemon from the host or a sidecar container without network exposure.
+## The admin socket lives in the matfix-run named volume; connect with:
+##   docker compose exec matfix matfixctl <command>
 
 services:
   matfix:
@@ -22,8 +22,8 @@ services:
       - ./config.yaml:/etc/matfix/config.yaml:ro
       # SQLite database - persist across restarts.
       - matfix-data:/data
-      # Admin UNIX socket - shared with host so matfixctl can connect.
-      - ./run/matfix:/run/matfix
+      # Admin UNIX socket - use 'docker compose exec matfix matfixctl' to connect.
+      - matfix-run:/run/matfix
 
     ports:
       # HTTP API - put a reverse proxy (nginx / Caddy) in front for TLS.
@@ -58,4 +58,6 @@ services:
 
 volumes:
   matfix-data:
+    driver: local
+  matfix-run:
     driver: local
