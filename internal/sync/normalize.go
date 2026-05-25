@@ -25,11 +25,24 @@ func (m *SyncManager) dispatchEvent(ctx context.Context, roomID string, evt *eve
 	case event.EventEncrypted:
 		m.dispatchEncrypted(ctx, roomID, evt)
 	case event.EventMessage:
-		m.dispatchMessage(ctx, roomID, evt)
+		// Skip messages sent by this account — they are outbound, not inbound.
+		if evt.Sender != m.userID {
+			m.dispatchMessage(ctx, roomID, evt)
+		} else {
+			m.markSeen(ctx, string(evt.ID))
+		}
 	case event.EventReaction:
-		m.dispatchReaction(ctx, roomID, evt)
+		if evt.Sender != m.userID {
+			m.dispatchReaction(ctx, roomID, evt)
+		} else {
+			m.markSeen(ctx, string(evt.ID))
+		}
 	case event.EventRedaction:
-		m.dispatchRedaction(ctx, roomID, evt)
+		if evt.Sender != m.userID {
+			m.dispatchRedaction(ctx, roomID, evt)
+		} else {
+			m.markSeen(ctx, string(evt.ID))
+		}
 	case event.StateMember:
 		m.dispatchMembership(ctx, roomID, evt)
 	}

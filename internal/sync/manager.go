@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/id"
 
 	"github.com/ilamparithi-in/matfix/internal/bus"
 	"github.com/ilamparithi-in/matfix/internal/engine"
@@ -38,6 +39,7 @@ type Config struct {
 // It is the only component permitted to call /sync or advance the sync token.
 type SyncManager struct {
 	accountID  string
+	userID     id.UserID
 	client     *engine.Client
 	syncStore  persistence.SyncStore
 	cacheStore persistence.EventCacheStore
@@ -51,6 +53,7 @@ type SyncManager struct {
 func New(cfg Config) *SyncManager {
 	return &SyncManager{
 		accountID:  cfg.AccountID,
+		userID:     cfg.Client.UserID(),
 		client:     cfg.Client,
 		syncStore:  cfg.SyncStore,
 		cacheStore: cfg.CacheStore,
