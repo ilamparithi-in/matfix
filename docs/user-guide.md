@@ -128,6 +128,26 @@ logging:
   format: json
 ```
 
+### Obtaining credentials
+
+matfix does not perform login - it expects a pre-authenticated session. Obtain `access_token`, `device_id`, and `user_id` from your homeserver once and paste them into the config.
+
+```sh
+curl -s -X POST "https://matrix.example.org/_matrix/client/v3/login" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "m.login.password",
+    "identifier": { "type": "m.id.user", "user": "bot" },
+    "password": "your-password",
+    "device_id": "MATFIX01",
+    "initial_device_display_name": "matfix"
+  }' | jq '{access_token, device_id, user_id}'
+```
+
+The three fields in the `jq` output map directly to `access_token`, `device_id`, and `user_id` in the config. Omit `device_id` in the request body if you want the homeserver to generate one for you - note the value it returns.
+
+> **Note:** if the bot account does not exist yet, register it first via your homeserver's admin API (e.g. Synapse's `register_new_matrix_user`) or the Element client.
+
 ### Full configuration reference
 
 ```yaml
