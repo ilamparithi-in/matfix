@@ -36,9 +36,15 @@ func receiveHandler(mgr *correlation.CorrelationManager) http.HandlerFunc {
 			writeError(w, http.StatusForbidden, "API key does not allow account: "+req.AccountID, "forbidden")
 			return
 		}
-		if !CheckRoom(r.Context(), req.Filter.RoomID) {
-			writeError(w, http.StatusForbidden, "API key does not allow room: "+req.Filter.RoomID, "forbidden")
-			return
+		// Check each explicit include room. Exclude-only or absent RoomID cannot be
+		// pre-checked statically; the filter itself limits what is collected.
+		if req.Filter.RoomID != nil {
+			for _, rid := range req.Filter.RoomID.Include {
+				if !CheckRoom(r.Context(), rid) {
+					writeError(w, http.StatusForbidden, "API key does not allow room: "+rid, "forbidden")
+					return
+				}
+			}
 		}
 
 		timeout := time.Duration(req.TimeoutSeconds) * time.Second
@@ -68,19 +74,39 @@ func receiveHandler(mgr *correlation.CorrelationManager) http.HandlerFunc {
 	}
 }
 
-// requestFilterToCorrelation maps an API FilterSpec to a correlation.FilterSpec.
-func requestFilterToCorrelation(f apireq.FilterSpec) correlation.FilterSpec {
-	var et bus.EventType
-	if f.EventType != "" {
-		et = bus.EventType(f.EventType)
+// requestFilterToCorrelation recursively maps an API FilterNode to a correlation.FilterNode.
+func requestFilterToCorrelation(f apireq.FilterNode) correlation.FilterNode {
+	n := correlation.FilterNode{
+		InReplyTo:        f.InReplyTo,
+		BodyRegex:        f.BodyRegex,
+		ReactionKey:      f.ReactionKey,
+		RelatesToEventID: f.RelatesToEventID,
+		HasAttachment:    f.HasAttachment,
+		MinTimestamp:     f.MinTimestamp,
+		MaxTimestamp:     f.MaxTimestamp,
 	}
-	return correlation.FilterSpec{
-		RoomID:    f.RoomID,
-		SenderID:  f.SenderID,
-		EventType: et,
-		InReplyTo: f.InReplyTo,
-		BodyRegex: f.BodyRegex,
+	if f.SenderID != nil {
+		n.SenderID = &correlation.StringSetFilter{Include: f.SenderID.Include, Exclude: f.SenderID.Exclude}
 	}
+	if f.RoomID != nil {
+		n.RoomID = &correlation.StringSetFilter{Include: f.RoomID.Include, Exclude: f.RoomID.Exclude}
+	}
+	if f.EventType != nil {
+		n.EventType = &correlation.StringSetFilter{Include: f.EventType.Include, Exclude: f.EventType.Exclude}
+	}
+	for _, child := range f.AllOf {
+		cc := requestFilterToCorrelation(*child)
+		n.AllOf = append(n.AllOf, &cc)
+	}
+	for _, child := range f.AnyOf {
+		cc := requestFilterToCorrelation(*child)
+		n.AnyOf = append(n.AnyOf, &cc)
+	}
+	if f.Not != nil {
+		cc := requestFilterToCorrelation(*f.Not)
+		n.Not = &cc
+	}
+	return n
 }
 
 // envelopesToPayloads converts a slice of bus.EventEnvelope to response payloads.

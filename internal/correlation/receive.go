@@ -19,7 +19,7 @@ import (
 type activeReceive struct {
 	id        string
 	accountID string
-	filter    compiledFilter
+	filter    *compiledFilter
 	timeoutAt time.Time
 	limit     int
 	mu        sync.Mutex
@@ -32,7 +32,7 @@ type activeReceive struct {
 // RegisterReceive registers a new receive subscription and returns a handle the
 // caller blocks on until the timeout elapses or the event limit is reached.
 func (m *CorrelationManager) RegisterReceive(ctx context.Context, req ReceiveRequest) (*ReceiveHandle, error) {
-	cf, err := newCompiledFilter(req.Filter)
+	cf, err := newCompiledFilter(&req.Filter)
 	if err != nil {
 		return nil, err
 	}
@@ -49,11 +49,15 @@ func (m *CorrelationManager) RegisterReceive(ctx context.Context, req ReceiveReq
 		return nil, fmt.Errorf("correlation: marshal receive filter: %w", err)
 	}
 	now := time.Now().UnixMilli()
+	roomID := ""
+	if req.Filter.RoomID != nil && len(req.Filter.RoomID.Include) == 1 {
+		roomID = req.Filter.RoomID.Include[0]
+	}
 	entry := persistence.CorrelationEntry{
 		ID:         id,
 		Type:       "receive",
 		AccountID:  req.AccountID,
-		RoomID:     req.Filter.RoomID,
+		RoomID:     roomID,
 		FilterJSON: string(filterJSON),
 		TimeoutAt:  timeoutAt.UnixMilli(),
 		State:      "pending",

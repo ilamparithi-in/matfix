@@ -967,29 +967,120 @@ Upload and send a file, image, audio clip, or video. See [File Attachments](#11-
 
 ## 10. Inbound Event Filters
 
-The `filter` object in `receive` and `ask` requests narrows which inbound events are delivered.
+The `filter` object in `receive` and `ask` requests is a recursive **FilterNode** expression that narrows which inbound events are delivered. All predicates set within a single node are ANDed. A node with no fields set matches every event.
+
+### 10.1 FilterNode fields
+
+#### Set filters (`StringSetFilter`)
+
+Each set filter has an `include` whitelist and an `exclude` blacklist. Both may be present simultaneously; exclude takes precedence. At least one of `include` or `exclude` must be non-empty if the field is present.
+
+| Field | Type | Description |
+|---|---|---|
+| `sender_id` | `StringSetFilter` | Filter by sender Matrix ID (see applicability table) |
+| `room_id` | `StringSetFilter` | Filter by room ID |
+| `event_type` | `StringSetFilter` | Filter by internal event type string |
 
 ```json
+{ "sender_id": { "exclude": ["@spam:example.org"] } }
+```
+
+```json
+{ "room_id": { "include": ["!main:example.org", "!dev:example.org"] } }
+```
+
+#### Scalar predicates
+
+| Field | Type | Description |
+|---|---|---|
+| `in_reply_to` | `string` | Match events whose `m.in_reply_to` equals this event ID |
+| `body_regex` | `string` | Go regular expression matched against the event body |
+| `reaction_key` | `string` | Match reactions with exactly this key/emoji |
+| `relates_to_event_id` | `string` | Match events related to this event ID (reaction, edit, redaction) |
+| `has_attachment` | `bool` | `true` — event must carry an attachment; `false` — must not |
+| `min_timestamp` | `int64` | Minimum event timestamp, Unix milliseconds (0 = unset) |
+| `max_timestamp` | `int64` | Maximum event timestamp, Unix milliseconds (0 = unset) |
+
+#### Combinators
+
+| Field | Type | Description |
+|---|---|---|
+| `all_of` | `[FilterNode]` | All child nodes must match (must be non-empty when set) |
+| `any_of` | `[FilterNode]` | At least one child node must match (must be non-empty when set) |
+| `not` | `FilterNode` | Child node must **not** match |
+
+Combinators may be nested to arbitrary depth.
+
+### 10.2 Event-type applicability
+
+Predicates that are set but do not apply to the matched event type cause the filter to **never match** for that event (strict semantics — there is no silent ignore).
+
+| Predicate | `inbound.message` | `inbound.reaction` | `inbound.edit` | `inbound.redaction` | `inbound.membership` | `inbound.receipt` |
+|---|---|---|---|---|---|---|
+| `sender_id` | `SenderID` | `SenderID` | `SenderID` | `SenderID` | `UserID` | `UserID` |
+| `in_reply_to` | `InReplyTo` | ✗ never | ✗ never | ✗ never | ✗ never | ✗ never |
+| `body_regex` | `Body` | ✗ never | `NewBody` | ✗ never | ✗ never | ✗ never |
+| `has_attachment` | `Attachment != nil` | ✗ never | ✗ never | ✗ never | ✗ never | ✗ never |
+| `reaction_key` | ✗ never | `Key` | ✗ never | ✗ never | ✗ never | ✗ never |
+| `relates_to_event_id` | ✗ never | `RelatesToEventID` | `RelatesToEventID` | `Redacts` | ✗ never | ✗ never |
+
+### 10.3 Examples
+
+**Match any reply to a specific outbound event:**
+```json
+{ "in_reply_to": "$outbound-event-id:example.org" }
+```
+
+**Exclude a spam sender across all event types:**
+```json
+{ "sender_id": { "exclude": ["@spam:example.org"] } }
+```
+
+**Only thumbs-up reactions to a specific message:**
+```json
 {
-  "room_id":    "!room:example.org",
-  "sender_id":  "@user:example.org",
-  "event_type": "inbound.message",
-  "in_reply_to":"$sentEventID",
-  "body_regex": "^(yes|no)$"
+  "event_type":          { "include": ["inbound.reaction"] },
+  "reaction_key":        "👍",
+  "relates_to_event_id": "$target-event-id"
 }
 ```
 
-| Field | Default | Description |
-|---|---|---|
-| `room_id` | any room | Match only events from this room |
-| `sender_id` | any sender | Match only events from this Matrix user |
-| `event_type` | `inbound.message` | Internal event type; currently only `inbound.message` is supported |
-| `in_reply_to` | none | Match only events whose `m.in_reply_to` equals this event ID (default correlation for `ask`) |
-| `body_regex` | none | Go regular expression matched against the event body |
+**Messages in a time window that have an attachment:**
+```json
+{
+  "has_attachment":  true,
+  "min_timestamp":   1716600000000,
+  "max_timestamp":   1716686400000
+}
+```
 
-All specified fields must match simultaneously (AND semantics). Omitted fields impose no restriction.
+**Any message with an attachment OR marked urgent:**
+```json
+{
+  "any_of": [
+    { "has_attachment": true },
+    { "body_regex": "(?i)urgent" }
+  ]
+}
+```
 
-### Inbound event payload
+**Messages from @alice or @bob, but not containing "off the record":**
+```json
+{
+  "sender_id": { "include": ["@alice:example.org", "@bob:example.org"] },
+  "not": { "body_regex": "(?i)off the record" }
+}
+```
+
+**Invalid filter — body_regex is inapplicable to reactions, so this never matches:**
+```json
+{
+  "event_type": { "include": ["inbound.reaction"] },
+  "body_regex":  "hello"
+}
+```
+
+### 10.4 Inbound event payload
 
 When events are returned (by `receive` or `ask`):
 
@@ -1006,7 +1097,7 @@ When events are returned (by `receive` or `ask`):
 }
 ```
 
-`timestamp` is Unix time in **milliseconds**.
+`timestamp` is Unix time in **milliseconds**. The `type` field corresponds to the internal event type strings used in `event_type` set filters (e.g. `"inbound.message"`, `"inbound.reaction"`, `"inbound.edit"`, `"inbound.redaction"`, `"inbound.membership"`, `"inbound.receipt"`).
 
 ---
 

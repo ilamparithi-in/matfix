@@ -7,27 +7,37 @@ import (
 	"github.com/ilamparithi-in/matfix/internal/bus"
 )
 
-// # Filter spec
+// # Filter types
 
-// FilterSpec defines the matching criteria for inbound events.
-type FilterSpec struct {
-	// RoomID restricts matches to a specific room. Empty = any room.
-	RoomID string
+// StringSetFilter is an include/exclude set filter for a string field.
+// Include is a whitelist (nil = unrestricted). Exclude is a blacklist (nil = no exclusions).
+// Both may be set simultaneously; exclude takes precedence.
+type StringSetFilter struct {
+	Include []string
+	Exclude []string
+}
 
-	// SenderID restricts matches to a specific sender. Empty = any sender.
-	SenderID string
+// FilterNode is a recursive filter expression.
+// All set fields within a node are ANDed. An empty node (all fields zero/nil) always matches.
+type FilterNode struct {
+	// Set filters
+	SenderID  *StringSetFilter
+	RoomID    *StringSetFilter
+	EventType *StringSetFilter
 
-	// EventType restricts the inbound bus event type.
-	// Zero value defaults to bus.EventInboundMessage during matching.
-	EventType bus.EventType
+	// Scalar predicates (zero value = unset/inactive)
+	InReplyTo        string
+	BodyRegex        string
+	ReactionKey      string
+	RelatesToEventID string
+	HasAttachment    *bool
+	MinTimestamp     int64 // Unix ms; 0 = unset
+	MaxTimestamp     int64 // Unix ms; 0 = unset
 
-	// InReplyTo restricts matches to events whose InReplyTo field equals this
-	// event ID. Empty = no relation filter.
-	InReplyTo string
-
-	// BodyRegex is an optional regular expression matched against the event body.
-	// Empty = no body filter.
-	BodyRegex string
+	// Combinators
+	AllOf []*FilterNode
+	AnyOf []*FilterNode
+	Not   *FilterNode
 }
 
 // # Requests
@@ -47,7 +57,7 @@ type AskRequest struct {
 	OutboundEventID string
 
 	// Filter defines the criteria an inbound event must satisfy to resolve this ask.
-	Filter FilterSpec
+	Filter FilterNode
 
 	// Timeout is how long to wait for a matching event before the handle expires.
 	Timeout time.Duration
@@ -63,7 +73,7 @@ type ReceiveRequest struct {
 	AccountID string
 
 	// Filter defines the criteria an inbound event must satisfy to be collected.
-	Filter FilterSpec
+	Filter FilterNode
 
 	// Timeout is the maximum duration to collect events.
 	Timeout time.Duration

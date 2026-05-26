@@ -18,7 +18,7 @@ type AskRequest struct {
 	Destination    string         `json:"destination"`
 	IdempotencyKey string         `json:"idempotency_key,omitempty"`
 	Message        MessagePayload `json:"message"`
-	Filter         FilterSpec     `json:"filter"`
+	Filter         FilterNode     `json:"filter"`
 	TimeoutSeconds int            `json:"timeout_seconds"`
 }
 
@@ -27,7 +27,7 @@ type AskRequest struct {
 // ReceiveRequest is the JSON body of POST /v1/receive.
 type ReceiveRequest struct {
 	AccountID      string     `json:"account_id"`
-	Filter         FilterSpec `json:"filter"`
+	Filter         FilterNode `json:"filter"`
 	TimeoutSeconds int        `json:"timeout_seconds"`
 	Limit          int        `json:"limit,omitempty"`
 }
@@ -87,24 +87,30 @@ type FileAttachment struct {
 	Duration int `json:"duration,omitempty"`
 }
 
-// # Filter spec
+// # Filter types
 
-// FilterSpec describes the matching criteria for inbound events in
-// receive and ask requests.
-type FilterSpec struct {
-	// RoomID restricts matches to a specific room. Empty = any room.
-	RoomID string `json:"room_id,omitempty"`
+// StringSetFilter is an include/exclude set filter for a string field.
+type StringSetFilter struct {
+	Include []string `json:"include,omitempty"`
+	Exclude []string `json:"exclude,omitempty"`
+}
 
-	// SenderID restricts matches to a specific sender. Empty = any sender.
-	SenderID string `json:"sender_id,omitempty"`
+// FilterNode is a recursive filter expression.
+// All set fields within a node are ANDed. An empty node (all fields zero/nil) always matches.
+type FilterNode struct {
+	SenderID  *StringSetFilter `json:"sender_id,omitempty"`
+	RoomID    *StringSetFilter `json:"room_id,omitempty"`
+	EventType *StringSetFilter `json:"event_type,omitempty"`
 
-	// EventType restricts the inbound bus event type (e.g. "inbound.message").
-	// Empty = inbound.message (default).
-	EventType string `json:"event_type,omitempty"`
+	InReplyTo        string `json:"in_reply_to,omitempty"`
+	BodyRegex        string `json:"body_regex,omitempty"`
+	ReactionKey      string `json:"reaction_key,omitempty"`
+	RelatesToEventID string `json:"relates_to_event_id,omitempty"`
+	HasAttachment    *bool  `json:"has_attachment,omitempty"`
+	MinTimestamp     int64  `json:"min_timestamp,omitempty"`
+	MaxTimestamp     int64  `json:"max_timestamp,omitempty"`
 
-	// InReplyTo restricts matches to events whose in_reply_to equals this event ID.
-	InReplyTo string `json:"in_reply_to,omitempty"`
-
-	// BodyRegex is an optional regular expression matched against the event body.
-	BodyRegex string `json:"body_regex,omitempty"`
+	AllOf []*FilterNode `json:"all_of,omitempty"`
+	AnyOf []*FilterNode `json:"any_of,omitempty"`
+	Not   *FilterNode   `json:"not,omitempty"`
 }

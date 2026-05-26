@@ -41,9 +41,15 @@ func askHandler(sub *submission.SubmissionManager, cor *correlation.CorrelationM
 			writeError(w, http.StatusForbidden, "API key does not allow account: "+req.AccountID, "forbidden")
 			return
 		}
-		if !CheckRoom(r.Context(), req.Filter.RoomID) {
-			writeError(w, http.StatusForbidden, "API key does not allow room: "+req.Filter.RoomID, "forbidden")
-			return
+		// Check each explicit include room. Exclude-only or absent RoomID cannot be
+		// pre-checked statically; the filter itself limits what is matched.
+		if req.Filter.RoomID != nil {
+			for _, rid := range req.Filter.RoomID.Include {
+				if !CheckRoom(r.Context(), rid) {
+					writeError(w, http.StatusForbidden, "API key does not allow room: "+rid, "forbidden")
+					return
+				}
+			}
 		}
 
 		msg, err := payloadToSendRequest(req.Message)

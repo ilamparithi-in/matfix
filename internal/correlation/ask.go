@@ -19,7 +19,7 @@ import (
 type activeAsk struct {
 	id        string
 	accountID string
-	filter    compiledFilter
+	filter    *compiledFilter
 	timeoutAt time.Time
 	result    chan bus.EventEnvelope
 	done      chan struct{}
@@ -38,7 +38,7 @@ func (m *CorrelationManager) RegisterAsk(ctx context.Context, req AskRequest) (*
 		req.Filter.InReplyTo = req.OutboundEventID
 	}
 
-	cf, err := newCompiledFilter(req.Filter)
+	cf, err := newCompiledFilter(&req.Filter)
 	if err != nil {
 		return nil, err
 	}
@@ -55,11 +55,15 @@ func (m *CorrelationManager) RegisterAsk(ctx context.Context, req AskRequest) (*
 		return nil, fmt.Errorf("correlation: marshal ask filter: %w", err)
 	}
 	now := time.Now().UnixMilli()
+	roomID := ""
+	if req.Filter.RoomID != nil && len(req.Filter.RoomID.Include) == 1 {
+		roomID = req.Filter.RoomID.Include[0]
+	}
 	entry := persistence.CorrelationEntry{
 		ID:              id,
 		Type:            "ask",
 		AccountID:       req.AccountID,
-		RoomID:          req.Filter.RoomID,
+		RoomID:          roomID,
 		OutboundEventID: req.OutboundEventID,
 		FilterJSON:      string(filterJSON),
 		TimeoutAt:       timeoutAt.UnixMilli(),

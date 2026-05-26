@@ -47,6 +47,7 @@ func (b *captureBus) lastMessage() (bus.InboundMessageEvent, bool) {
 func newTestManager(b *captureBus) *SyncManager {
 	return &SyncManager{
 		accountID:  "test-account",
+		userID:     "@bot:example.com",
 		cacheStore: &stubCacheStore{},
 		bus:        b,
 	}
