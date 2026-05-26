@@ -71,15 +71,15 @@ func askHandler(sub *submission.SubmissionManager, cor *correlation.CorrelationM
 			return
 		}
 
-		// Register the correlation ask. Use the Matrix event ID as both the
-		// correlation ID and OutboundEventID so RegisterAsk auto-injects InReplyTo.
+		// Register the correlation ask. Exclude the bot's own MXID so the
+		// homeserver echo of the sent message never resolves the ask.
 		timeout := time.Duration(req.TimeoutSeconds) * time.Second
 		handle, err := cor.RegisterAsk(r.Context(), correlation.AskRequest{
-			CorrelationID:   matrixEventID,
-			AccountID:       req.AccountID,
-			OutboundEventID: matrixEventID,
-			Filter:          requestFilterToCorrelation(req.Filter),
-			Timeout:         timeout,
+			CorrelationID: matrixEventID,
+			AccountID:     req.AccountID,
+			BotUserID:     sub.UserID(req.AccountID),
+			Filter:        requestFilterToCorrelation(req.Filter),
+			Timeout:       timeout,
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error(), "internal_error")

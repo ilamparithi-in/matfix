@@ -56,6 +56,11 @@ type AskRequest struct {
 	// the preferred m.in_reply_to correlation strategy.
 	OutboundEventID string
 
+	// BotUserID is the Matrix user ID of the sending account. When non-empty, events
+	// whose sender matches this ID are automatically excluded from matching, preventing
+	// the bot's own echoed message from resolving the ask.
+	BotUserID string
+
 	// Filter defines the criteria an inbound event must satisfy to resolve this ask.
 	Filter FilterNode
 

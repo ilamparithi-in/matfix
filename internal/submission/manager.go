@@ -62,6 +62,16 @@ func New(cfg Config) *SubmissionManager {
 	}
 }
 
+// UserID returns the Matrix user ID of the given account.
+// Returns an empty string when the account is not currently available.
+func (m *SubmissionManager) UserID(accountID string) string {
+	client, ok := m.clients(accountID)
+	if !ok {
+		return ""
+	}
+	return string(client.UserID())
+}
+
 // SendDirect validates req, resolves the destination, and sends the message
 // synchronously to the homeserver, returning the resulting Matrix event ID.
 //

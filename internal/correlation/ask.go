@@ -38,6 +38,15 @@ func (m *CorrelationManager) RegisterAsk(ctx context.Context, req AskRequest) (*
 		req.Filter.InReplyTo = req.OutboundEventID
 	}
 
+	// Auto-exclude the bot's own sender so the echo of the sent message never
+	// resolves the ask. Append to any existing exclude list the caller supplied.
+	if req.BotUserID != "" {
+		if req.Filter.SenderID == nil {
+			req.Filter.SenderID = &StringSetFilter{}
+		}
+		req.Filter.SenderID.Exclude = append(req.Filter.SenderID.Exclude, req.BotUserID)
+	}
+
 	cf, err := newCompiledFilter(&req.Filter)
 	if err != nil {
 		return nil, err
