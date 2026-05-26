@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ilamparithi-in/matfix/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -166,9 +167,11 @@ func main() {
 		Use:           "matfixctl",
 		Short:         "Admin CLI for the matfix relay daemon",
 		Long:          "matfixctl communicates with the matfix daemon over a UNIX domain socket.",
+		Version:       version.Full(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+	root.SetVersionTemplate("{{.Name}} {{.Version}}\n")
 	root.PersistentFlags().StringVar(&socketPath, "socket", "/run/matfix/admin.sock",
 		"path to the matfix admin UNIX socket")
 

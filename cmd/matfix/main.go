@@ -20,6 +20,7 @@ import (
 	"github.com/ilamparithi-in/matfix/internal/persistence"
 	"github.com/ilamparithi-in/matfix/internal/queue"
 	"github.com/ilamparithi-in/matfix/internal/submission"
+	"github.com/ilamparithi-in/matfix/internal/version"
 	"github.com/ilamparithi-in/matfix/internal/worker"
 )
 
@@ -28,7 +29,13 @@ func main() {
 
 	configFile := flag.String("config", "matfix.yaml", "path to YAML config file")
 	logLevel := flag.String("log-level", "", "override log level (debug|info|warn|error)")
+	showVersion := flag.Bool("version", false, "print build version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("matfix %s\n", version.Full())
+		return
+	}
 
 	// # Config
 

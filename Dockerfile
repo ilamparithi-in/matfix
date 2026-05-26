@@ -9,10 +9,16 @@ RUN go mod download
 
 COPY . .
 
+ARG VERSION=0.0.0
+ARG COMMIT=none
+ARG DATE=unknown
+
+ENV BUILD_LDFLAGS="-s -w -X github.com/ilamparithi-in/matfix/internal/version.Version=${VERSION} -X github.com/ilamparithi-in/matfix/internal/version.Commit=${COMMIT} -X github.com/ilamparithi-in/matfix/internal/version.Date=${DATE}"
+
 # Build both binaries. CGO is disabled - modernc.org/sqlite is pure Go.
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -tags goolm \
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="${BUILD_LDFLAGS}" -tags goolm \
       -o /out/matfix    ./cmd/matfix && \
-    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -tags goolm \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="${BUILD_LDFLAGS}" -tags goolm \
       -o /out/matfixctl ./cmd/matfixctl
 
 ### Runtime stage
