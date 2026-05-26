@@ -58,25 +58,28 @@ func askHandler(sub *submission.SubmissionManager, cor *correlation.CorrelationM
 			return
 		}
 
-		// Submit the outbound message first.
-		jobID, err := sub.Submit(r.Context(), submission.SubmitRequest{
-			AccountID:      req.AccountID,
-			Destination:    req.Destination,
-			Message:        msg,
-			IdempotencyKey: req.IdempotencyKey,
+		// Send the outbound message synchronously to capture the Matrix event ID.
+		// This is necessary so RegisterAsk can inject it as the InReplyTo filter,
+		// ensuring we only match actual replies and never the bot's own echo.
+		matrixEventID, err := sub.SendDirect(r.Context(), submission.SubmitRequest{
+			AccountID:   req.AccountID,
+			Destination: req.Destination,
+			Message:     msg,
 		})
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error(), "submission_error")
 			return
 		}
 
-		// Register the correlation ask. The job ID doubles as the correlation ID.
+		// Register the correlation ask. Use the Matrix event ID as both the
+		// correlation ID and OutboundEventID so RegisterAsk auto-injects InReplyTo.
 		timeout := time.Duration(req.TimeoutSeconds) * time.Second
 		handle, err := cor.RegisterAsk(r.Context(), correlation.AskRequest{
-			CorrelationID: jobID,
-			AccountID:     req.AccountID,
-			Filter:        requestFilterToCorrelation(req.Filter),
-			Timeout:       timeout,
+			CorrelationID:   matrixEventID,
+			AccountID:       req.AccountID,
+			OutboundEventID: matrixEventID,
+			Filter:          requestFilterToCorrelation(req.Filter),
+			Timeout:         timeout,
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error(), "internal_error")
@@ -90,7 +93,7 @@ func askHandler(sub *submission.SubmissionManager, cor *correlation.CorrelationM
 			return
 		}
 
-		resp := apires.AskResponse{JobID: jobID}
+		resp := apires.AskResponse{JobID: matrixEventID}
 		if matched != nil {
 			ep := envelopeToPayload(*matched)
 			resp.MatchedEvent = &ep

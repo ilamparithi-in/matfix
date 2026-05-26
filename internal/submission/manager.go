@@ -62,6 +62,31 @@ func New(cfg Config) *SubmissionManager {
 	}
 }
 
+// SendDirect validates req, resolves the destination, and sends the message
+// synchronously to the homeserver, returning the resulting Matrix event ID.
+//
+// Unlike Submit, SendDirect bypasses the queue and has no retry. Use this for
+// ask-style interactions where the Matrix event ID is needed before a
+// correlation can be registered.
+func (m *SubmissionManager) SendDirect(ctx context.Context, req SubmitRequest) (string, error) {
+	if err := validateRequest(req, m.accounts); err != nil {
+		return "", err
+	}
+	client, ok := m.clients(req.AccountID)
+	if !ok {
+		return "", fmt.Errorf("submission: account %q is not currently available", req.AccountID)
+	}
+	roomID, err := client.ResolveRoom(ctx, req.Destination)
+	if err != nil {
+		return "", fmt.Errorf("submission: resolve destination %q: %w", req.Destination, err)
+	}
+	eventID, err := client.Send(ctx, roomID, req.Message)
+	if err != nil {
+		return "", fmt.Errorf("submission: send: %w", err)
+	}
+	return string(eventID), nil
+}
+
 // Submit validates req, deduplicates by idempotency key, resolves the
 // destination to a Matrix room ID, and enqueues the job.
 //
