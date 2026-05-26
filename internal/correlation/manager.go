@@ -92,6 +92,13 @@ func (m *CorrelationManager) handleEvent(env bus.EventEnvelope) {
 	m.mu.RLock()
 	var matchedAsks []*activeAsk
 	for _, a := range m.asks {
+		// Never match the homeserver echo of the bot's own sent message.
+		// The ask's correlation ID is the sent Matrix event ID, so an inbound
+		// message carrying that same event ID is always the echo — reject it
+		// regardless of what the sender field contains.
+		if p, ok := env.Payload.(bus.InboundMessageEvent); ok && p.EventID == a.id {
+			continue
+		}
 		if a.filter.matches(env, a.accountID) {
 			matchedAsks = append(matchedAsks, a)
 		}

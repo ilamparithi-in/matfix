@@ -87,6 +87,13 @@ func (m *SyncManager) dispatchEncrypted(ctx context.Context, roomID string, evt 
 	if m.decrypter == nil {
 		return
 	}
+	// Discard the bot's own outbound encrypted messages early.
+	// The outer event's Sender is set by the homeserver and is authoritative
+	// before decryption; checking it here avoids a pointless decrypt call.
+	if evt.Sender == m.userID {
+		m.markSeen(ctx, string(evt.ID))
+		return
+	}
 	decrypted, err := m.decrypter.DecryptMegolmEvent(ctx, evt)
 	if err != nil {
 		slog.Warn("sync: failed to decrypt event",
