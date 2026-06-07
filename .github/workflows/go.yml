@@ -1,0 +1,116 @@
+# This workflow will build a golang project
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
+
+name: Build Go binaries
+
+on: [push, pull_request]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version-file: go.mod
+
+    - name: Check formatting
+      run: |
+        files=$(gofmt -l .)
+        if [ -n "$files" ]; then
+          echo "Files need formatting:"
+          echo "$files"
+          exit 1
+        fi
+
+    - name: Vet
+      run: go vet -v -tags goolm ./...
+
+    - name: Test
+      run: go test -v -tags goolm ./...
+      
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: windows
+            goarch: arm64
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version-file: go.mod
+
+    - name: Set build metadata
+      id: meta
+      shell: bash
+      run: |
+        TAG=$(git describe --tags --abbrev=0 --match "v[0-9]*.[0-9]*.[0-9]*" 2>/dev/null || true)
+
+        if [ -n "$TAG" ]; then
+          VERSION="${TAG#v}"
+        else
+          VERSION="0.0.0"
+        fi
+
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+        echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+    - name: Build
+      shell: bash
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+      run: |
+        mkdir -p dist
+
+        EXT=""
+        if [ "$GOOS" = "windows" ]; then
+          EXT=".exe"
+        fi
+
+        LDFLAGS="-X github.com/ilamparithi-in/matfix/internal/version.Version=${{ steps.meta.outputs.version }} \
+        -X github.com/ilamparithi-in/matfix/internal/version.Commit=${{ steps.meta.outputs.commit }} \
+        -X github.com/ilamparithi-in/matfix/internal/version.Date=${{ steps.meta.outputs.date }}"
+
+        go build \
+          -trimpath \
+          -tags goolm \
+          -ldflags "$LDFLAGS" \
+          -o dist/matfix-${GOOS}-${GOARCH}${EXT} \
+          ./cmd/matfix
+
+        go build \
+          -trimpath \
+          -tags goolm \
+          -ldflags "$LDFLAGS" \
+          -o dist/matfixctl-${GOOS}-${GOARCH}${EXT} \
+          ./cmd/matfixctl
+
+    - name: Upload binaries
+      uses: actions/upload-artifact@v7
+      with:
+        name: matfix-${{ matrix.goos }}-${{ matrix.goarch }}
+        path: dist/*
+        if-no-files-found: error
