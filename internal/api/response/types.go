@@ -42,13 +42,13 @@ type EventPayload struct {
 // AttachmentPayload surfaces the MXC URL and optional key material for file,
 // image, audio, and video messages.
 type AttachmentPayload struct {
-	URL           string                `json:"url,omitempty"`
-	MimeType      string                `json:"mime_type,omitempty"`
-	Filename      string                `json:"filename,omitempty"`
-	Size          int                   `json:"size,omitempty"`
-	Width         int                   `json:"width,omitempty"`
-	Height        int                   `json:"height,omitempty"`
-	Duration      int                   `json:"duration,omitempty"`
+	URL      string `json:"url,omitempty"`
+	MimeType string `json:"mime_type,omitempty"`
+	Filename string `json:"filename,omitempty"`
+	Size     int    `json:"size,omitempty"`
+	Width    int    `json:"width,omitempty"`
+	Height   int    `json:"height,omitempty"`
+	Duration int    `json:"duration,omitempty"`
 	// EncryptedFile is non-nil for attachments from encrypted rooms.
 	// Consumers are responsible for downloading and decrypting the blob.
 	EncryptedFile *EncryptedFilePayload `json:"encrypted_file,omitempty"`
