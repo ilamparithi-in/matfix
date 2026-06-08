@@ -1,5 +1,5 @@
 ### Build stage
-FROM golang:1.26-bookworm AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26-bookworm AS builder
 
 WORKDIR /src
 
@@ -13,12 +13,15 @@ ARG VERSION=0.0.0
 ARG COMMIT=none
 ARG DATE=unknown
 
+ARG TARGETOS
+ARG TARGETARCH
+
 ENV BUILD_LDFLAGS="-s -w -X github.com/ilamparithi-in/matfix/internal/version.Version=${VERSION} -X github.com/ilamparithi-in/matfix/internal/version.Commit=${COMMIT} -X github.com/ilamparithi-in/matfix/internal/version.Date=${DATE}"
 
 # Build both binaries. CGO is disabled - modernc.org/sqlite is pure Go.
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="${BUILD_LDFLAGS}" -tags goolm \
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="${BUILD_LDFLAGS}" -tags goolm \
       -o /out/matfix    ./cmd/matfix && \
-    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="${BUILD_LDFLAGS}" -tags goolm \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="${BUILD_LDFLAGS}" -tags goolm \
       -o /out/matfixctl ./cmd/matfixctl
 
 ### Runtime stage
@@ -32,18 +35,18 @@ RUN apt-get update && \
 
 # Non-root runtime user - pinned UID/GID so volume ownership is stable across
 # base image upgrades.
-RUN groupadd -r -g 10670 matfix && useradd -r -u 10670 -g 10670 -s /sbin/nologin matfix
+RUN groupadd -r -g 679 matfix && useradd -r -u 679 -g 679 -s /sbin/nologin matfix
 
 # Persistent data volume - SQLite database lives here.
-RUN install -d -o 10670 -g 10670 -m 0750 /data
+RUN install -d -o 679 -g 679 -m 0750 /data
 
 # Admin socket directory.
-RUN install -d -o 10670 -g 10670 -m 0750 /run/matfix
+RUN install -d -o 679 -g 679 -m 0750 /run/matfix
 
 COPY --from=builder /out/matfix    /usr/local/bin/matfix
 COPY --from=builder /out/matfixctl /usr/local/bin/matfixctl
 
-USER 10670:10670
+USER 679:679
 
 # HTTP API
 EXPOSE 8080
