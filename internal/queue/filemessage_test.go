@@ -13,12 +13,14 @@ func TestPayloadRoundTrip_FileMessage(t *testing.T) {
 	mgr := newManager(t, 3)
 
 	want := engine.FileMessage{
-		Filename: "photo.png",
-		MimeType: "image/png",
-		Data:     []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}, // PNG header
-		Width:    640,
-		Height:   480,
-		Size:     8,
+		Filename:         "photo.png",
+		MimeType:         "image/png",
+		Data:             []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}, // PNG header
+		Caption:          "Visible caption",
+		FormattedCaption: "<b>Visible caption</b>",
+		Width:            640,
+		Height:           480,
+		Size:             8,
 	}
 
 	job, err := mgr.Enqueue(ctx, "acc1", "!room:server", want, "fm-idem-1")
@@ -49,6 +51,12 @@ func TestPayloadRoundTrip_FileMessage(t *testing.T) {
 	}
 	if !bytes.Equal(got.Data, want.Data) {
 		t.Errorf("Data: want %v, got %v", want.Data, got.Data)
+	}
+	if got.Caption != want.Caption {
+		t.Errorf("Caption: want %q, got %q", want.Caption, got.Caption)
+	}
+	if got.FormattedCaption != want.FormattedCaption {
+		t.Errorf("FormattedCaption: want %q, got %q", want.FormattedCaption, got.FormattedCaption)
 	}
 	if got.Width != want.Width {
 		t.Errorf("Width: want %d, got %d", want.Width, got.Width)

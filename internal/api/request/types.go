@@ -42,10 +42,12 @@ type MessagePayload struct {
 	// Type selects the message variant.
 	Type string `json:"type"`
 
-	// Body is the plain-text message body. Used by: text, html, reply, edit.
+	// Body is the plain-text message body. Used by: text, html, reply, edit,
+	// and as the media caption for file.
 	Body string `json:"body,omitempty"`
 
-	// FormattedBody is the HTML-formatted body. Used by: html, reply, edit.
+	// FormattedBody is the HTML-formatted body. Used by: html, reply, edit,
+	// and as the formatted media caption for file.
 	FormattedBody string `json:"formatted_body,omitempty"`
 
 	// InReplyTo is the event ID this message replies to. Used by: reply.

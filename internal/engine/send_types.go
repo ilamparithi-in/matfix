@@ -51,16 +51,20 @@ type Redaction struct {
 // FileMessage sends an m.room.message event with a file attachment.
 // Data holds the raw file bytes; the engine encrypts and uploads them
 // automatically for encrypted rooms.
+// Caption is optional; when empty, Matrix body falls back to Filename.
+// FormattedCaption is optional HTML and is sanitized before transmission.
 // Width and Height are in pixels (image/video); Duration is in milliseconds
 // (audio/video). Size overrides the reported file size when non-zero.
 type FileMessage struct {
-	Filename string
-	MimeType string
-	Data     []byte
-	Width    int
-	Height   int
-	Duration int
-	Size     int
+	Filename         string
+	MimeType         string
+	Data             []byte
+	Caption          string
+	FormattedCaption string
+	Width            int
+	Height           int
+	Duration         int
+	Size             int
 }
 
 func (TextMessage) isSendRequest() {}

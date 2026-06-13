@@ -90,6 +90,9 @@ func payloadToSendRequest(p apireq.MessagePayload) (engine.SendRequest, error) {
 		if p.File == nil {
 			return nil, fmt.Errorf("message type \"file\" requires a file attachment")
 		}
+		if p.FormattedBody != "" && p.Body == "" {
+			return nil, fmt.Errorf("file attachment formatted_body requires body")
+		}
 		if p.File.MimeType == "" {
 			return nil, fmt.Errorf("file attachment requires mime_type")
 		}
@@ -105,12 +108,14 @@ func payloadToSendRequest(p apireq.MessagePayload) (engine.SendRequest, error) {
 			return nil, fmt.Errorf("file attachment exceeds 50 MiB limit (%d bytes decoded)", len(raw))
 		}
 		return engine.FileMessage{
-			Filename: p.File.Filename,
-			MimeType: p.File.MimeType,
-			Data:     raw,
-			Width:    p.File.Width,
-			Height:   p.File.Height,
-			Duration: p.File.Duration,
+			Filename:         p.File.Filename,
+			MimeType:         p.File.MimeType,
+			Data:             raw,
+			Caption:          p.Body,
+			FormattedCaption: p.FormattedBody,
+			Width:            p.File.Width,
+			Height:           p.File.Height,
+			Duration:         p.File.Duration,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unknown message type: %q", p.Type)

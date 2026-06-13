@@ -84,10 +84,12 @@ func (c *Client) Send(ctx context.Context, roomID id.RoomID, req SendRequest) (i
 			return "", fmt.Errorf("send file to %s: media manager not configured", roomID)
 		}
 		content, err := c.media.PrepareAttachment(ctx, roomID, r.Data, r.MimeType, r.Filename, media.Hints{
-			Width:    r.Width,
-			Height:   r.Height,
-			Duration: r.Duration,
-			Size:     r.Size,
+			Caption:          r.Caption,
+			FormattedCaption: SanitizeHTML(r.FormattedCaption),
+			Width:            r.Width,
+			Height:           r.Height,
+			Duration:         r.Duration,
+			Size:             r.Size,
 		})
 		if err != nil {
 			return "", fmt.Errorf("prepare attachment for %s: %w", roomID, err)

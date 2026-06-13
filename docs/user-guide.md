@@ -953,6 +953,7 @@ Upload and send a file, image, audio clip, or video. See [File Attachments](#11-
 ```json
 {
   "type": "file",
+  "body": "Photo from the site visit",
   "file": {
     "data": "<base64-encoded bytes>",
     "mime_type": "image/png",
@@ -962,6 +963,11 @@ Upload and send a file, image, audio clip, or video. See [File Attachments](#11-
   }
 }
 ```
+
+For media captions, set the top-level `body` field. Optional
+`formatted_body` may be used for an HTML-formatted caption when `body` is also
+provided. If `body` is omitted, matfix uses `file.filename` as the Matrix
+fallback body.
 
 ---
 
@@ -1110,6 +1116,7 @@ Set `message.type` to `"file"` and include a `file` object:
 ```json
 {
   "type": "file",
+  "body": "Quarterly report",
   "file": {
     "data":      "<standard base64, no line breaks>",
     "mime_type": "application/pdf",
@@ -1117,6 +1124,11 @@ Set `message.type` to `"file"` and include a `file` object:
   }
 }
 ```
+
+`body` is optional for file attachments and is sent as the visible Matrix media
+caption. `formatted_body` is also supported for HTML-formatted captions, but it
+must be paired with `body`. When no caption is provided, matfix keeps the
+previous behavior and uses `filename` as the Matrix `body` fallback.
 
 Optional metadata fields for images and video:
 

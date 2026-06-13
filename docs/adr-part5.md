@@ -313,8 +313,9 @@ does not inspect file bytes directly.
 Outbound attachment delivery follows this lifecycle:
 
 1. The API caller submits a send request with type "file", base64-encoded file
-   bytes, a MIME type, a filename, and optional metadata hints (width, height,
-   duration in milliseconds).
+   bytes, a MIME type, a filename, optional caption fields (body,
+   formatted_body), and optional metadata hints (width, height, duration in
+   milliseconds).
 2. The API handler decodes the base64 bytes and enforces a maximum upload size
    (default 50 MB, 52,428,800 bytes). Oversized payloads are rejected at the
    API boundary before queue insertion.
@@ -384,6 +385,8 @@ FileAttachment object containing:
 * data - base64-encoded file bytes (required)
 * mime_type - MIME content type (required)
 * filename - display filename (optional)
+* body - visible media caption (optional; falls back to filename when omitted)
+* formatted_body - HTML-formatted media caption (optional; requires body)
 * width, height - pixel dimensions for image and video (optional)
 * duration - duration in milliseconds for audio and video (optional)
 

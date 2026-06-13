@@ -95,7 +95,7 @@ func TestDispatchMessage_PlainAttachment(t *testing.T) {
 
 			evt := makeMessageEvent("$ev1:server", "@user:server", event.MessageEventContent{
 				MsgType:  tc.msgType,
-				Body:     "file.bin",
+				Body:     "Visible caption",
 				FileName: "file.bin",
 				URL:      id.ContentURIString(tc.url),
 				Info: &event.FileInfo{
@@ -115,6 +115,9 @@ func TestDispatchMessage_PlainAttachment(t *testing.T) {
 			}
 			if msg.Attachment == nil {
 				t.Fatalf("Attachment is nil for msgtype %s", tc.msgType)
+			}
+			if msg.Body != "Visible caption" {
+				t.Errorf("Body: got %q, want caption", msg.Body)
 			}
 			att := msg.Attachment
 			if att.URL != tc.url {

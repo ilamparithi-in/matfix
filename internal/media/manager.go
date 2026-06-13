@@ -13,13 +13,17 @@ import (
 
 // Hints carries optional media metadata for populating the event info block.
 // Zero values are omitted from the resulting FileInfo.
+// Caption overrides the Matrix body for media caption support; when empty,
+// the body falls back to the filename.
 // Width and Height are in pixels; Duration is in milliseconds (audio/video).
 // Size overrides len(data) as the reported file size when non-zero.
 type Hints struct {
-	Width    int
-	Height   int
-	Duration int
-	Size     int
+	Caption          string
+	FormattedCaption string
+	Width            int
+	Height           int
+	Duration         int
+	Size             int
 }
 
 // # Manager
@@ -62,18 +66,7 @@ func (m *Manager) PrepareAttachment(
 		size = hints.Size
 	}
 
-	content := event.MessageEventContent{
-		MsgType:  InferMsgType(mimeType),
-		Body:     filename,
-		FileName: filename,
-		Info: &event.FileInfo{
-			MimeType: mimeType,
-			Size:     size,
-			Width:    hints.Width,
-			Height:   hints.Height,
-			Duration: hints.Duration,
-		},
-	}
+	content := newAttachmentContent(mimeType, filename, size, hints)
 
 	if encrypted {
 		ciphertext, ef := EncryptAttachment(data)
@@ -102,4 +95,28 @@ func (m *Manager) PrepareAttachment(
 	}
 
 	return content, nil
+}
+
+func newAttachmentContent(mimeType, filename string, size int, hints Hints) event.MessageEventContent {
+	body := filename
+	if hints.Caption != "" {
+		body = hints.Caption
+	}
+	content := event.MessageEventContent{
+		MsgType:  InferMsgType(mimeType),
+		Body:     body,
+		FileName: filename,
+		Info: &event.FileInfo{
+			MimeType: mimeType,
+			Size:     size,
+			Width:    hints.Width,
+			Height:   hints.Height,
+			Duration: hints.Duration,
+		},
+	}
+	if hints.Caption != "" && hints.FormattedCaption != "" {
+		content.Format = event.FormatHTML
+		content.FormattedBody = hints.FormattedCaption
+	}
+	return content
 }
