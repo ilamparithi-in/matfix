@@ -130,7 +130,33 @@ func (m *CorrelationManager) resolveReceive(r *activeReceive, state string) {
 		r.result <- events
 		close(r.done)
 		m.removeReceive(r.id)
-		_ = m.store.UpdateState(context.Background(), r.id, state)
+
+		if state == "resolved" {
+			var eventIDs []string
+			for _, env := range events {
+				var eventID string
+				switch p := env.Payload.(type) {
+				case bus.InboundMessageEvent:
+					eventID = p.EventID
+				case bus.InboundReactionEvent:
+					eventID = p.EventID
+				case bus.InboundEditEvent:
+					eventID = p.EventID
+				case bus.InboundRedactionEvent:
+					eventID = p.EventID
+				case bus.InboundMembershipEvent:
+					eventID = p.EventID
+				case bus.InboundReceiptEvent:
+					eventID = p.EventID
+				}
+				if eventID != "" {
+					eventIDs = append(eventIDs, eventID)
+				}
+			}
+			_ = m.store.ResolveCorrelation(context.Background(), r.id, eventIDs)
+		} else {
+			_ = m.store.UpdateState(context.Background(), r.id, state)
+		}
 	})
 }
 

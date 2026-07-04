@@ -31,6 +31,7 @@ func buildRouter(cfg Config, rl *rateLimiter) http.Handler {
 		r.With(RequireRoute("send")).Post("/v1/send", sendHandler(cfg.Submission))
 		r.With(RequireRoute("receive")).Post("/v1/receive", receiveHandler(cfg.Correlation))
 		r.With(RequireRoute("ask")).Post("/v1/ask", askHandler(cfg.Submission, cfg.Correlation))
+		r.Get("/v1/jobs/{job_id}", jobStatusHandler(cfg.QueueStore, cfg.CorrStore))
 
 		r.Route("/v1/admin", func(r chi.Router) {
 			r.Use(RequireRoute("admin"))

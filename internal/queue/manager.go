@@ -120,6 +120,15 @@ func (m *QueueManager) Transition(ctx context.Context, jobID string, newState St
 	return nil
 }
 
+// Acknowledge transitions the job to acknowledged state and saves the Matrix Event ID.
+func (m *QueueManager) Acknowledge(ctx context.Context, jobID string, matrixEventID string) error {
+	if err := m.store.AcknowledgeJob(ctx, jobID, matrixEventID); err != nil {
+		return fmt.Errorf("queue: acknowledge %s: %w", jobID, err)
+	}
+	return nil
+}
+
+
 // ScheduleRetry schedules the next delivery attempt for jobID, or moves it to
 // dead_letter if retries are exhausted.
 //

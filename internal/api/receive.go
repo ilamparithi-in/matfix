@@ -67,6 +67,7 @@ func receiveHandler(mgr *correlation.CorrelationManager) http.HandlerFunc {
 		}
 
 		resp := apires.ReceiveResponse{
+			JobID:    handle.ID,
 			Events:   envelopesToPayloads(events),
 			TimedOut: len(events) == 0,
 		}

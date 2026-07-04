@@ -104,7 +104,7 @@ func processOne(ctx context.Context, cfg Config, accountID string) (processed bo
 	}
 
 	// Delivery succeeded.
-	if err := cfg.Manager.Transition(ctx, job.ID, queue.StateAcknowledged); err != nil {
+	if err := cfg.Manager.Acknowledge(ctx, job.ID, string(matrixEventID)); err != nil {
 		slog.Error("worker: failed to mark job acknowledged",
 			"job_id", job.ID,
 			"error", err,

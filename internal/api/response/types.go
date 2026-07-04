@@ -16,12 +16,24 @@ type AskResponse struct {
 	TimedOut     bool          `json:"timed_out,omitempty"`
 }
 
-// # Receive
-
 // ReceiveResponse is the JSON body of a successful POST /v1/receive response.
 type ReceiveResponse struct {
+	JobID    string         `json:"job_id"`
 	Events   []EventPayload `json:"events"`
 	TimedOut bool           `json:"timed_out,omitempty"`
+}
+
+// JobStatusResponse is the JSON body of a GET /v1/jobs/{job_id} response.
+type JobStatusResponse struct {
+	JobID            string   `json:"job_id"`
+	Type             string   `json:"type"` // "send" | "ask" | "receive"
+	AccountID        string   `json:"account_id"`
+	State            string   `json:"state"`
+	RetryCount       int      `json:"retry_count,omitempty"`
+	MatrixEventID    string   `json:"matrix_event_id,omitempty"`
+	ResolvedEventIDs []string `json:"resolved_event_ids,omitempty"`
+	CreatedAt        int64    `json:"created_at"`
+	UpdatedAt        int64    `json:"updated_at"`
 }
 
 // # Event payload

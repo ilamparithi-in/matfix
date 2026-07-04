@@ -3,6 +3,7 @@ package persistence
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -30,20 +31,22 @@ type QueueEntry struct {
 	IdempotencyKey string // empty = no idempotency key
 	CreatedAt      int64
 	UpdatedAt      int64
+	MatrixEventID  string // Matrix event ID returned after sending
 }
 
 // CorrelationEntry represents one active ask or receive subscription.
 type CorrelationEntry struct {
-	ID              string
-	Type            string // "ask" | "receive"
-	AccountID       string
-	RoomID          string
-	OutboundEventID string
-	FilterJSON      string
-	TimeoutAt       int64
-	State           string // "pending" | "resolved" | "expired"
-	CreatedAt       int64
-	UpdatedAt       int64
+	ID               string
+	Type             string // "ask" | "receive"
+	AccountID        string
+	RoomID           string
+	OutboundEventID  string
+	FilterJSON       string
+	TimeoutAt        int64
+	State            string // "pending" | "resolved" | "expired"
+	CreatedAt        int64
+	UpdatedAt        int64
+	ResolvedEventIDs string // JSON list of event IDs that resolved the request
 }
 
 // APIKeyRow represents an API key record.
@@ -83,8 +86,12 @@ type QueueStore interface {
 	// PullNext atomically claims the next eligible queued job for the account,
 	// advances its state to "sending", and returns it. Returns nil, nil when none is available.
 	PullNext(ctx context.Context, accountID string) (*QueueEntry, error)
+	// GetByID returns the job with the given ID. Returns nil, nil when not found.
+	GetByID(ctx context.Context, id string) (*QueueEntry, error)
 	// UpdateState sets the state field of a job.
 	UpdateState(ctx context.Context, id, state string) error
+	// AcknowledgeJob transitions the job state to "acknowledged" and records the Matrix Event ID.
+	AcknowledgeJob(ctx context.Context, id string, matrixEventID string) error
 	// ScheduleRetry sets the job back to state "queued" with updated retry metadata.
 	ScheduleRetry(ctx context.Context, id string, retryCount int, scheduledAt int64) error
 	// MoveToDeadLetter marks a job as "dead_letter".
@@ -100,6 +107,7 @@ type CorrelationStore interface {
 	Insert(ctx context.Context, entry CorrelationEntry) error
 	GetByID(ctx context.Context, id string) (*CorrelationEntry, error)
 	UpdateState(ctx context.Context, id, state string) error
+	ResolveCorrelation(ctx context.Context, id string, resolvedEventIDs []string) error
 	// DeleteExpired removes pending entries whose timeout_at is before now (Unix ms).
 	DeleteExpired(ctx context.Context, now int64) (int64, error)
 	ListActive(ctx context.Context) ([]CorrelationEntry, error)
@@ -186,22 +194,24 @@ func (s *sqlSyncStore) SetNextBatch(ctx context.Context, accountID, token string
 
 type sqlQueueStore struct{ db *sql.DB }
 
-const queueCols = `id, account_id, room_id, payload, state, retry_count, scheduled_at, idempotency_key, created_at, updated_at`
+const queueCols = `id, account_id, room_id, payload, state, retry_count, scheduled_at, idempotency_key, created_at, updated_at, matrix_event_id`
 
 func scanQueueEntry(row scanner) (QueueEntry, error) {
 	var e QueueEntry
 	err := row.Scan(
 		&e.ID, &e.AccountID, &e.RoomID, &e.Payload, &e.State,
 		&e.RetryCount, &e.ScheduledAt, &e.IdempotencyKey, &e.CreatedAt, &e.UpdatedAt,
+		&e.MatrixEventID,
 	)
 	return e, err
 }
 
 func (s *sqlQueueStore) Enqueue(ctx context.Context, entry QueueEntry) error {
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO outbound_queue (`+queueCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO outbound_queue (`+queueCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		entry.ID, entry.AccountID, entry.RoomID, entry.Payload, entry.State,
 		entry.RetryCount, entry.ScheduledAt, entry.IdempotencyKey, entry.CreatedAt, entry.UpdatedAt,
+		entry.MatrixEventID,
 	)
 	if err != nil {
 		return fmt.Errorf("queue_store: enqueue: %w", err)
@@ -265,6 +275,20 @@ func (s *sqlQueueStore) PullNext(ctx context.Context, accountID string) (*QueueE
 	return &e, nil
 }
 
+func (s *sqlQueueStore) GetByID(ctx context.Context, id string) (*QueueEntry, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+queueCols+` FROM outbound_queue WHERE id = ?`, id,
+	)
+	e, err := scanQueueEntry(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("queue_store: get by id: %w", err)
+	}
+	return &e, nil
+}
+
 func (s *sqlQueueStore) UpdateState(ctx context.Context, id, state string) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE outbound_queue SET state = ?, updated_at = ? WHERE id = ?`,
@@ -272,6 +296,17 @@ func (s *sqlQueueStore) UpdateState(ctx context.Context, id, state string) error
 	)
 	if err != nil {
 		return fmt.Errorf("queue_store: update state: %w", err)
+	}
+	return nil
+}
+
+func (s *sqlQueueStore) AcknowledgeJob(ctx context.Context, id string, matrixEventID string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE outbound_queue SET state = 'acknowledged', matrix_event_id = ?, updated_at = ? WHERE id = ?`,
+		matrixEventID, time.Now().UnixMilli(), id,
+	)
+	if err != nil {
+		return fmt.Errorf("queue_store: acknowledge job: %w", err)
 	}
 	return nil
 }
@@ -338,22 +373,24 @@ func (s *sqlQueueStore) ListByState(ctx context.Context, accountID string, state
 
 type sqlCorrelationStore struct{ db *sql.DB }
 
-const corrCols = `id, type, account_id, room_id, outbound_event_id, filter_json, timeout_at, state, created_at, updated_at`
+const corrCols = `id, type, account_id, room_id, outbound_event_id, filter_json, timeout_at, state, created_at, updated_at, resolved_event_ids`
 
 func scanCorrelationEntry(row scanner) (CorrelationEntry, error) {
 	var e CorrelationEntry
 	err := row.Scan(
 		&e.ID, &e.Type, &e.AccountID, &e.RoomID, &e.OutboundEventID,
 		&e.FilterJSON, &e.TimeoutAt, &e.State, &e.CreatedAt, &e.UpdatedAt,
+		&e.ResolvedEventIDs,
 	)
 	return e, err
 }
 
 func (s *sqlCorrelationStore) Insert(ctx context.Context, entry CorrelationEntry) error {
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO correlation_state (`+corrCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO correlation_state (`+corrCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		entry.ID, entry.Type, entry.AccountID, entry.RoomID, entry.OutboundEventID,
 		entry.FilterJSON, entry.TimeoutAt, entry.State, entry.CreatedAt, entry.UpdatedAt,
+		entry.ResolvedEventIDs,
 	)
 	if err != nil {
 		return fmt.Errorf("correlation_store: insert: %w", err)
@@ -382,6 +419,21 @@ func (s *sqlCorrelationStore) UpdateState(ctx context.Context, id, state string)
 	)
 	if err != nil {
 		return fmt.Errorf("correlation_store: update state: %w", err)
+	}
+	return nil
+}
+
+func (s *sqlCorrelationStore) ResolveCorrelation(ctx context.Context, id string, resolvedEventIDs []string) error {
+	idsJSON, err := json.Marshal(resolvedEventIDs)
+	if err != nil {
+		return fmt.Errorf("correlation_store: marshal resolved event ids: %w", err)
+	}
+	_, err = s.db.ExecContext(ctx,
+		`UPDATE correlation_state SET state = 'resolved', resolved_event_ids = ?, updated_at = ? WHERE id = ?`,
+		string(idsJSON), time.Now().UnixMilli(), id,
+	)
+	if err != nil {
+		return fmt.Errorf("correlation_store: resolve correlation: %w", err)
 	}
 	return nil
 }

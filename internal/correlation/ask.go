@@ -123,7 +123,28 @@ func (m *CorrelationManager) deliverToAsk(a *activeAsk, env bus.EventEnvelope) {
 		a.result <- env
 		close(a.done)
 		m.removeAsk(a.id)
-		_ = m.store.UpdateState(context.Background(), a.id, "resolved")
+
+		var eventID string
+		switch p := env.Payload.(type) {
+		case bus.InboundMessageEvent:
+			eventID = p.EventID
+		case bus.InboundReactionEvent:
+			eventID = p.EventID
+		case bus.InboundEditEvent:
+			eventID = p.EventID
+		case bus.InboundRedactionEvent:
+			eventID = p.EventID
+		case bus.InboundMembershipEvent:
+			eventID = p.EventID
+		case bus.InboundReceiptEvent:
+			eventID = p.EventID
+		}
+
+		if eventID != "" {
+			_ = m.store.ResolveCorrelation(context.Background(), a.id, []string{eventID})
+		} else {
+			_ = m.store.UpdateState(context.Background(), a.id, "resolved")
+		}
 	})
 }
 

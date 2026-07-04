@@ -43,13 +43,13 @@ func TestMigrate_Idempotent(t *testing.T) {
 		}
 	}
 
-	// All five migrations should be recorded.
+	// All six migrations should be recorded.
 	var count int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if count != 5 {
-		t.Errorf("want 5 migration records, got %d", count)
+	if count != 6 {
+		t.Errorf("want 6 migration records, got %d", count)
 	}
 }
 
