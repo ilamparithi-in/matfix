@@ -128,7 +128,6 @@ func (m *QueueManager) Acknowledge(ctx context.Context, jobID string, matrixEven
 	return nil
 }
 
-
 // ScheduleRetry schedules the next delivery attempt for jobID, or moves it to
 // dead_letter if retries are exhausted.
 //

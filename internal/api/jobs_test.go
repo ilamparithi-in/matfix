@@ -44,7 +44,7 @@ func TestJobStatusHandler(t *testing.T) {
 	rawKey := "test-api-key"
 	hash := sha256.Sum256([]byte(rawKey))
 	keyHash := hex.EncodeToString(hash[:])
-	
+
 	perms := Permissions{
 		Accounts: []string{"bot"},
 		Routes:   []string{"jobs", "send"},
