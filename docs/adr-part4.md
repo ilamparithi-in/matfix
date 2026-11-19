@@ -361,6 +361,8 @@ Administrative tooling may expose:
 
 This is especially important for debugging complex workflows.
 
+Active subscription counts and in-flight receive handles are queried directly from the in-memory correlation manager registry to avoid database read/write contention and provide instant, accurate visibility into live connections.
+
 ---
 
 # 18. Failure Semantics

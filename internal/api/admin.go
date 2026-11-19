@@ -70,32 +70,52 @@ func adminAccountsHandler(accounts *account.AccountManager) http.HandlerFunc {
 	}
 }
 
+// SubscriptionCounter is optionally implemented by the correlation manager to report
+// active in-memory subscription counts without database queries.
+type SubscriptionCounter interface {
+	ActiveCounts() (asks int, receives int)
+}
+
 // adminSubscriptionsHandler returns the handler for GET /v1/admin/subscriptions.
-func adminSubscriptionsHandler(store persistence.CorrelationStore) http.HandlerFunc {
+func adminSubscriptionsHandler(counter SubscriptionCounter, store persistence.CorrelationStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		entries, err := store.ListActive(r.Context())
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to query subscriptions", "internal_error")
+		if counter != nil {
+			asks, receives := counter.ActiveCounts()
+			writeJSON(w, http.StatusOK, apires.AdminSubscriptionsResponse{
+				Asks:     asks,
+				Receives: receives,
+			})
 			return
 		}
 
-		var asks, receives int
-		for _, e := range entries {
-			// Skip entries that have already timed out at the DB level.
-			if e.TimeoutAt > 0 && e.TimeoutAt < time.Now().UnixMilli() {
-				continue
+		if store != nil {
+			entries, err := store.ListActive(r.Context())
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to query subscriptions", "internal_error")
+				return
 			}
-			switch e.Type {
-			case "ask":
-				asks++
-			case "receive":
-				receives++
+
+			var asks, receives int
+			for _, e := range entries {
+				// Skip entries that have already timed out at the DB level.
+				if e.TimeoutAt > 0 && e.TimeoutAt < time.Now().UnixMilli() {
+					continue
+				}
+				switch e.Type {
+				case "ask":
+					asks++
+				case "receive":
+					receives++
+				}
 			}
+
+			writeJSON(w, http.StatusOK, apires.AdminSubscriptionsResponse{
+				Asks:     asks,
+				Receives: receives,
+			})
+			return
 		}
 
-		writeJSON(w, http.StatusOK, apires.AdminSubscriptionsResponse{
-			Asks:     asks,
-			Receives: receives,
-		})
+		writeJSON(w, http.StatusOK, apires.AdminSubscriptionsResponse{})
 	}
 }

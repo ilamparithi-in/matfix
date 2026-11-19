@@ -10,7 +10,7 @@ import (
 
 // defaultChannelSize is the per-subscriber event buffer depth.
 // Events published to a full buffer are dropped for that subscriber.
-const defaultChannelSize = 256
+const defaultChannelSize = 2048
 
 // # Subscription entry
 

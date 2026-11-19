@@ -36,7 +36,7 @@ func buildRouter(cfg Config, rl *rateLimiter) http.Handler {
 			r.Use(RequireRoute("admin"))
 			r.Get("/queue", adminQueueHandler(cfg.Accounts, cfg.QueueStore))
 			r.Get("/accounts", adminAccountsHandler(cfg.Accounts))
-			r.Get("/subscriptions", adminSubscriptionsHandler(cfg.CorrStore))
+			r.Get("/subscriptions", adminSubscriptionsHandler(cfg.Correlation, cfg.CorrStore))
 		})
 	})
 

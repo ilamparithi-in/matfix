@@ -287,13 +287,21 @@ Queue persistence is mandatory.
 
 Must persist:
 
-* active ask requests
-* receive subscriptions
-* timeout metadata
-* matching filters
+* active ask requests (outbound message correlation)
+* timeout metadata for durable asks
+* matching filters for durable asks
 * response state
 
-This allows correlation continuity after restart where practical.
+#### Ephemeral Receive Subscriptions
+
+`receive` subscriptions (HTTP long-polling) are inherently connection-bound to an open HTTP client socket. If the daemon restarts or crashes, the underlying TCP connection is terminated and the client must reconnect.
+
+Persisting ephemeral `receive` subscriptions synchronously to the database introduces severe write lock contention on SQLite when multiple clients poll concurrently, without providing crash-recovery value. Therefore:
+
+* `receive` subscriptions are maintained **purely in-memory**.
+* Subscriptions are indexed by Room ID in-memory for $O(1)$ event routing.
+* On restart, in-flight `receive` sockets close cleanly; clients reconnect and re-register in-memory.
+* Administrative inspection of active subscriptions reads from the in-memory correlation registry rather than disk.
 
 ---
 

@@ -2,15 +2,12 @@ package correlation
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/ilamparithi-in/matfix/internal/bus"
-	"github.com/ilamparithi-in/matfix/internal/persistence"
 )
 
 // # Active receive
@@ -19,6 +16,7 @@ import (
 type activeReceive struct {
 	id        string
 	accountID string
+	rooms     []string
 	filter    *compiledFilter
 	timeoutAt time.Time
 	limit     int
@@ -31,6 +29,7 @@ type activeReceive struct {
 
 // RegisterReceive registers a new receive subscription and returns a handle the
 // caller blocks on until the timeout elapses or the event limit is reached.
+// Receive subscriptions are kept purely in-memory and indexed by room.
 func (m *CorrelationManager) RegisterReceive(ctx context.Context, req ReceiveRequest) (*ReceiveHandle, error) {
 	cf, err := newCompiledFilter(&req.Filter)
 	if err != nil {
@@ -44,33 +43,15 @@ func (m *CorrelationManager) RegisterReceive(ctx context.Context, req ReceiveReq
 
 	timeoutAt := time.Now().Add(req.Timeout)
 
-	filterJSON, err := json.Marshal(req.Filter)
-	if err != nil {
-		return nil, fmt.Errorf("correlation: marshal receive filter: %w", err)
-	}
-	now := time.Now().UnixMilli()
-	roomID := ""
-	if req.Filter.RoomID != nil && len(req.Filter.RoomID.Include) == 1 {
-		roomID = req.Filter.RoomID.Include[0]
-	}
-	entry := persistence.CorrelationEntry{
-		ID:         id,
-		Type:       "receive",
-		AccountID:  req.AccountID,
-		RoomID:     roomID,
-		FilterJSON: string(filterJSON),
-		TimeoutAt:  timeoutAt.UnixMilli(),
-		State:      "pending",
-		CreatedAt:  now,
-		UpdatedAt:  now,
-	}
-	if err := m.store.Insert(ctx, entry); err != nil {
-		return nil, fmt.Errorf("correlation: persist receive: %w", err)
+	var rooms []string
+	if req.Filter.RoomID != nil && len(req.Filter.RoomID.Include) > 0 {
+		rooms = req.Filter.RoomID.Include
 	}
 
 	r := &activeReceive{
 		id:        id,
 		accountID: req.AccountID,
+		rooms:     rooms,
 		filter:    cf,
 		timeoutAt: timeoutAt,
 		limit:     req.Limit,
@@ -78,9 +59,7 @@ func (m *CorrelationManager) RegisterReceive(ctx context.Context, req ReceiveReq
 		done:      make(chan struct{}),
 	}
 
-	m.mu.Lock()
-	m.receives[id] = r
-	m.mu.Unlock()
+	m.addReceive(r)
 
 	// Launch timeout goroutine so the window self-closes without polling.
 	go func() {
@@ -129,14 +108,46 @@ func (m *CorrelationManager) resolveReceive(r *activeReceive, state string) {
 
 		r.result <- events
 		close(r.done)
-		m.removeReceive(r.id)
-		_ = m.store.UpdateState(context.Background(), r.id, state)
+		m.removeReceive(r)
 	})
 }
 
-// removeReceive deletes the receive subscription from the in-memory map.
-func (m *CorrelationManager) removeReceive(id string) {
-	m.mu.Lock()
-	delete(m.receives, id)
-	m.mu.Unlock()
+// addReceive registers the receive subscription in memory and in the room index.
+func (m *CorrelationManager) addReceive(r *activeReceive) {
+	m.receivesMu.Lock()
+	defer m.receivesMu.Unlock()
+
+	m.receives[r.id] = r
+	if len(r.rooms) == 0 {
+		m.wildcardReceives[r.id] = r
+	} else {
+		for _, rid := range r.rooms {
+			bucket, ok := m.receivesByRoom[rid]
+			if !ok {
+				bucket = make(map[string]*activeReceive)
+				m.receivesByRoom[rid] = bucket
+			}
+			bucket[r.id] = r
+		}
+	}
+}
+
+// removeReceive deletes the receive subscription from the in-memory map and room index.
+func (m *CorrelationManager) removeReceive(r *activeReceive) {
+	m.receivesMu.Lock()
+	defer m.receivesMu.Unlock()
+
+	delete(m.receives, r.id)
+	if len(r.rooms) == 0 {
+		delete(m.wildcardReceives, r.id)
+	} else {
+		for _, rid := range r.rooms {
+			if bucket, ok := m.receivesByRoom[rid]; ok {
+				delete(bucket, r.id)
+				if len(bucket) == 0 {
+					delete(m.receivesByRoom, rid)
+				}
+			}
+		}
+	}
 }

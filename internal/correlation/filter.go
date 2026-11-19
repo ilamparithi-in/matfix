@@ -4,9 +4,40 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sync"
 
 	"github.com/ilamparithi-in/matfix/internal/bus"
 )
+
+// regexCache caches compiled regular expressions to avoid repeated compilation.
+var (
+	regexCacheMu sync.RWMutex
+	regexCache   = make(map[string]*regexp.Regexp)
+)
+
+// compileRegexCached retrieves a compiled regexp from cache or compiles and caches it.
+func compileRegexCached(pattern string) (*regexp.Regexp, error) {
+	regexCacheMu.RLock()
+	if re, ok := regexCache[pattern]; ok {
+		regexCacheMu.RUnlock()
+		return re, nil
+	}
+	regexCacheMu.RUnlock()
+
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, err
+	}
+
+	regexCacheMu.Lock()
+	if len(regexCache) > 1024 {
+		regexCache = make(map[string]*regexp.Regexp)
+	}
+	regexCache[pattern] = re
+	regexCacheMu.Unlock()
+
+	return re, nil
+}
 
 // # stringSet
 
@@ -100,7 +131,7 @@ func validate(n *FilterNode) error {
 		return errors.New("correlation: any_of must be non-empty when set")
 	}
 	if n.BodyRegex != "" {
-		if _, err := regexp.Compile(n.BodyRegex); err != nil {
+		if _, err := compileRegexCached(n.BodyRegex); err != nil {
 			return fmt.Errorf("correlation: invalid body_regex %q: %w", n.BodyRegex, err)
 		}
 	}
@@ -144,7 +175,7 @@ func compileNode(n *FilterNode) (*compiledFilterNode, error) {
 		maxTimestamp:     n.MaxTimestamp,
 	}
 	if n.BodyRegex != "" {
-		re, err := regexp.Compile(n.BodyRegex)
+		re, err := compileRegexCached(n.BodyRegex)
 		if err != nil {
 			return nil, fmt.Errorf("correlation: invalid body_regex %q: %w", n.BodyRegex, err)
 		}

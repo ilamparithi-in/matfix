@@ -30,9 +30,15 @@ type CorrelationManager struct {
 	bus   bus.Bus
 	store persistence.CorrelationStore
 
-	mu       sync.RWMutex
-	asks     map[string]*activeAsk
-	receives map[string]*activeReceive
+	// Dedicated lock and bucketed index for receives
+	receivesMu       sync.RWMutex
+	receives         map[string]*activeReceive
+	receivesByRoom   map[string]map[string]*activeReceive
+	wildcardReceives map[string]*activeReceive
+
+	// Dedicated lock for asks
+	asksMu sync.RWMutex
+	asks   map[string]*activeAsk
 
 	subIDs []bus.SubscriptionID
 }
@@ -40,10 +46,12 @@ type CorrelationManager struct {
 // New constructs a CorrelationManager from cfg.
 func New(cfg Config) *CorrelationManager {
 	return &CorrelationManager{
-		bus:      cfg.Bus,
-		store:    cfg.Store,
-		asks:     make(map[string]*activeAsk),
-		receives: make(map[string]*activeReceive),
+		bus:              cfg.Bus,
+		store:            cfg.Store,
+		asks:             make(map[string]*activeAsk),
+		receives:         make(map[string]*activeReceive),
+		receivesByRoom:   make(map[string]map[string]*activeReceive),
+		wildcardReceives: make(map[string]*activeReceive),
 	}
 }
 
@@ -88,8 +96,8 @@ func (m *CorrelationManager) handleEvent(env bus.EventEnvelope) {
 		}
 	}()
 
-	// Collect matches under a read lock to avoid holding the lock during delivery.
-	m.mu.RLock()
+	// Collect matched asks under asksMu
+	m.asksMu.RLock()
 	var matchedAsks []*activeAsk
 	for _, a := range m.asks {
 		// Never match the homeserver echo of the bot's own sent message.
@@ -103,13 +111,30 @@ func (m *CorrelationManager) handleEvent(env bus.EventEnvelope) {
 			matchedAsks = append(matchedAsks, a)
 		}
 	}
+	m.asksMu.RUnlock()
+
+	// Collect matched receives under receivesMu using room index
+	m.receivesMu.RLock()
 	var matchedReceives []*activeReceive
-	for _, r := range m.receives {
+
+	// 1. Check room-specific bucket if room ID is present
+	if env.RoomID != "" {
+		if roomBucket, ok := m.receivesByRoom[env.RoomID]; ok {
+			for _, r := range roomBucket {
+				if r.filter.matches(env, r.accountID) {
+					matchedReceives = append(matchedReceives, r)
+				}
+			}
+		}
+	}
+
+	// 2. Always check wildcard bucket (subscriptions with no room filter)
+	for _, r := range m.wildcardReceives {
 		if r.filter.matches(env, r.accountID) {
 			matchedReceives = append(matchedReceives, r)
 		}
 	}
-	m.mu.RUnlock()
+	m.receivesMu.RUnlock()
 
 	for _, a := range matchedAsks {
 		m.deliverToAsk(a, env)
@@ -117,4 +142,17 @@ func (m *CorrelationManager) handleEvent(env bus.EventEnvelope) {
 	for _, r := range matchedReceives {
 		m.collectForReceive(r, env)
 	}
+}
+
+// ActiveCounts returns the count of currently active in-memory ask and receive subscriptions.
+func (m *CorrelationManager) ActiveCounts() (asks int, receives int) {
+	m.asksMu.RLock()
+	asks = len(m.asks)
+	m.asksMu.RUnlock()
+
+	m.receivesMu.RLock()
+	receives = len(m.receives)
+	m.receivesMu.RUnlock()
+
+	return asks, receives
 }

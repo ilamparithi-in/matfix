@@ -91,26 +91,46 @@ func QueueHandler(accounts *account.AccountManager, store persistence.QueueStore
 	}
 }
 
+// SubscriptionCounter is optionally implemented by the correlation manager to report
+// active in-memory subscription counts without database queries.
+type SubscriptionCounter interface {
+	ActiveCounts() (asks int, receives int)
+}
+
 // SubscriptionsHandler handles GET /subscriptions.
 //
 // It returns the count of active ask and receive correlation entries.
-func SubscriptionsHandler(store persistence.CorrelationStore) http.HandlerFunc {
+func SubscriptionsHandler(counter SubscriptionCounter, store persistence.CorrelationStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		entries, err := store.ListActive(r.Context())
-		if err != nil {
-			slog.Error("admin: subscriptions inspect failed", "error", err)
-			writeError(w, http.StatusInternalServerError, "failed to query subscriptions", "internal_error")
+		if counter != nil {
+			asks, receives := counter.ActiveCounts()
+			writeJSON(w, http.StatusOK, subscriptionsResponse{
+				Asks:     asks,
+				Receives: receives,
+			})
 			return
 		}
-		var resp subscriptionsResponse
-		for _, e := range entries {
-			switch e.Type {
-			case "ask":
-				resp.Asks++
-			case "receive":
-				resp.Receives++
+
+		if store != nil {
+			entries, err := store.ListActive(r.Context())
+			if err != nil {
+				slog.Error("admin: subscriptions inspect failed", "error", err)
+				writeError(w, http.StatusInternalServerError, "failed to query subscriptions", "internal_error")
+				return
 			}
+			var resp subscriptionsResponse
+			for _, e := range entries {
+				switch e.Type {
+				case "ask":
+					resp.Asks++
+				case "receive":
+					resp.Receives++
+				}
+			}
+			writeJSON(w, http.StatusOK, resp)
+			return
 		}
-		writeJSON(w, http.StatusOK, resp)
+
+		writeJSON(w, http.StatusOK, subscriptionsResponse{})
 	}
 }

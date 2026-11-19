@@ -93,9 +93,9 @@ func (m *CorrelationManager) RegisterAsk(ctx context.Context, req AskRequest) (*
 		done:      make(chan struct{}),
 	}
 
-	m.mu.Lock()
+	m.asksMu.Lock()
 	m.asks[id] = a
-	m.mu.Unlock()
+	m.asksMu.Unlock()
 
 	// Launch timeout goroutine so the handle self-expires without polling.
 	go func() {
@@ -140,7 +140,7 @@ func (m *CorrelationManager) resolveAskTimeout(a *activeAsk) {
 
 // removeAsk deletes the ask from the in-memory map.
 func (m *CorrelationManager) removeAsk(id string) {
-	m.mu.Lock()
+	m.asksMu.Lock()
 	delete(m.asks, id)
-	m.mu.Unlock()
+	m.asksMu.Unlock()
 }

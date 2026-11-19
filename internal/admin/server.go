@@ -34,6 +34,9 @@ type Config struct {
 
 	// CorrStore is used for active subscription inspection.
 	CorrStore persistence.CorrelationStore
+
+	// Correlation is used for live in-memory subscription inspection.
+	Correlation adminroutes.SubscriptionCounter
 }
 
 // # Server
@@ -61,7 +64,7 @@ func New(cfg Config) *Server {
 	// Read-only inspection.
 	r.Get("/accounts", adminroutes.AccountsHandler(cfg.Accounts))
 	r.Get("/queue", adminroutes.QueueHandler(cfg.Accounts, cfg.QueueStore))
-	r.Get("/subscriptions", adminroutes.SubscriptionsHandler(cfg.CorrStore))
+	r.Get("/subscriptions", adminroutes.SubscriptionsHandler(cfg.Correlation, cfg.CorrStore))
 
 	return &Server{
 		httpServer: &http.Server{

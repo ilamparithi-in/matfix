@@ -144,6 +144,7 @@ func main() {
 		APIKeyStore: stores.APIKey,
 		QueueStore:  stores.Queue,
 		CorrStore:   stores.Correlation,
+		Correlation: correlationMgr,
 	})
 	go func() {
 		if err := adminSrv.Start(); err != nil {

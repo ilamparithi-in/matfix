@@ -34,20 +34,23 @@ func (m *CorrelationManager) runCleanup(ctx context.Context) {
 func (m *CorrelationManager) sweepExpired(ctx context.Context) {
 	now := time.Now()
 
-	m.mu.RLock()
+	m.asksMu.RLock()
 	var expiredAsks []*activeAsk
 	for _, a := range m.asks {
 		if now.After(a.timeoutAt) {
 			expiredAsks = append(expiredAsks, a)
 		}
 	}
+	m.asksMu.RUnlock()
+
+	m.receivesMu.RLock()
 	var expiredReceives []*activeReceive
 	for _, r := range m.receives {
 		if now.After(r.timeoutAt) {
 			expiredReceives = append(expiredReceives, r)
 		}
 	}
-	m.mu.RUnlock()
+	m.receivesMu.RUnlock()
 
 	for _, a := range expiredAsks {
 		m.resolveAskTimeout(a)
