@@ -229,7 +229,7 @@ func TestReceive_HighConcurrencyStrictDelivery(t *testing.T) {
 	const totalClients = numRooms * clientsPerRoom
 
 	type clientResult struct {
-		clientIdx int
+		clientIdx  int
 		targetRoom string
 		events     []bus.EventEnvelope
 		err        error
