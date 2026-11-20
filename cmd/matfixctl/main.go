@@ -8,7 +8,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -404,9 +406,9 @@ func accountsCmd() *cobra.Command {
 // # queue
 
 func queueCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "queue",
-		Short: "Show outbound queue depth",
+		Short: "Inspect and manage the outbound message delivery queue",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			resp, err := doGet(adminBase + "/queue")
 			if err != nil {
@@ -429,6 +431,128 @@ func queueCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.AddCommand(
+		queueDeadLetterCmd(),
+		queueRedriveCmd(),
+		queueRedriveAllCmd(),
+	)
+	return cmd
+}
+
+func queueDeadLetterCmd() *cobra.Command {
+	var accountID string
+	var limit int
+	cmd := &cobra.Command{
+		Use:   "dead-letter",
+		Short: "List dead-lettered outbound message jobs",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			endpoint := adminBase + "/queue/dead-letter"
+			values := url.Values{}
+			if accountID != "" {
+				values.Set("account_id", accountID)
+			}
+			if limit > 0 {
+				values.Set("limit", strconv.Itoa(limit))
+			}
+			if len(values) > 0 {
+				endpoint += "?" + values.Encode()
+			}
+
+			resp, err := doGet(endpoint)
+			if err != nil {
+				return fmt.Errorf("connect: %w", err)
+			}
+			defer resp.Body.Close()
+			if err := checkError(resp); err != nil {
+				return err
+			}
+
+			var jobs []struct {
+				ID         string `json:"id"`
+				AccountID  string `json:"account_id"`
+				RoomID     string `json:"room_id"`
+				RetryCount int    `json:"retry_count"`
+				LastError  string `json:"last_error"`
+				UpdatedAt  int64  `json:"updated_at"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&jobs); err != nil {
+				return err
+			}
+
+			if len(jobs) == 0 {
+				fmt.Println("No dead-letter jobs found.")
+				return nil
+			}
+
+			fmt.Printf("%-36s  %-10s  %-24s  %-7s  %s\n", "JOB ID", "ACCOUNT", "ROOM", "RETRIES", "LAST ERROR")
+			fmt.Println(strings.Repeat("-", 100))
+			for _, j := range jobs {
+				errStr := j.LastError
+				if len(errStr) > 40 {
+					errStr = errStr[:37] + "..."
+				}
+				fmt.Printf("%-36s  %-10s  %-24s  %-7d  %s\n", j.ID, j.AccountID, j.RoomID, j.RetryCount, errStr)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&accountID, "account", "a", "", "Filter by Matrix account ID")
+	cmd.Flags().IntVarP(&limit, "limit", "n", 50, "Maximum number of jobs to return")
+	return cmd
+}
+
+func queueRedriveCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "redrive <id>",
+		Short: "Schedule a dead-lettered message job for immediate retry",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := args[0]
+			resp, err := doPost(adminBase + "/queue/redrive/" + id)
+			if err != nil {
+				return fmt.Errorf("connect: %w", err)
+			}
+			defer resp.Body.Close()
+			if err := checkError(resp); err != nil {
+				return err
+			}
+			fmt.Printf("Message queue job %q scheduled for retry.\n", id)
+			return nil
+		},
+	}
+}
+
+func queueRedriveAllCmd() *cobra.Command {
+	var accountID string
+	cmd := &cobra.Command{
+		Use:   "redrive-all",
+		Short: "Schedule all dead-lettered message jobs for immediate retry",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			endpoint := adminBase + "/queue/redrive-all"
+			if accountID != "" {
+				endpoint += "?account_id=" + url.QueryEscape(accountID)
+			}
+			resp, err := doPost(endpoint)
+			if err != nil {
+				return fmt.Errorf("connect: %w", err)
+			}
+			defer resp.Body.Close()
+			if err := checkError(resp); err != nil {
+				return err
+			}
+			var res struct {
+				Count int64 `json:"count"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+				return err
+			}
+			fmt.Printf("Redrove %d dead-letter message queue jobs.\n", res.Count)
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&accountID, "account", "a", "", "Filter by Matrix account ID")
+	return cmd
 }
 
 // # subscriptions

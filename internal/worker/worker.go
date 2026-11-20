@@ -88,7 +88,7 @@ func processOne(ctx context.Context, cfg Config, accountID string) (processed bo
 			"account_id", accountID,
 			"job_id", job.ID,
 		)
-		if _, _, retryErr := cfg.Manager.ScheduleRetry(ctx, job.ID, job.RetryCount); retryErr != nil {
+		if _, _, retryErr := cfg.Manager.ScheduleRetry(ctx, job.ID, job.RetryCount, "engine client unavailable"); retryErr != nil {
 			slog.Error("worker: failed to reschedule job after missing client",
 				"job_id", job.ID,
 				"error", retryErr,
@@ -134,7 +134,7 @@ func onSendFailure(ctx context.Context, cfg Config, job *queue.Job, accountID, e
 		"error", errMsg,
 	)
 
-	retried, scheduledAt, retryErr := cfg.Manager.ScheduleRetry(ctx, job.ID, job.RetryCount)
+	retried, scheduledAt, retryErr := cfg.Manager.ScheduleRetry(ctx, job.ID, job.RetryCount, errMsg)
 	if retryErr != nil {
 		slog.Error("worker: failed to schedule retry",
 			"job_id", job.ID,

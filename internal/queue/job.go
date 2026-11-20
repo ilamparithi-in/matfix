@@ -145,6 +145,7 @@ type Job struct {
 	RetryCount     int
 	ScheduledAt    time.Time
 	IdempotencyKey string
+	LastError      string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }

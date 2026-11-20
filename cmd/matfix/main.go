@@ -160,6 +160,7 @@ func main() {
 		Accounts:    accounts,
 		APIKeyStore: stores.APIKey,
 		QueueStore:  stores.Queue,
+		QueueMgr:    queueMgr,
 		CorrStore:   stores.Correlation,
 		Correlation: correlationMgr,
 		Webhooks:    webhookMgr,

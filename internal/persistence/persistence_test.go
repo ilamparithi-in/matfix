@@ -48,8 +48,8 @@ func TestMigrate_Idempotent(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if count != 6 {
-		t.Errorf("want 6 migration records, got %d", count)
+	if count != 7 {
+		t.Errorf("want 7 migration records, got %d", count)
 	}
 }
 
@@ -206,7 +206,7 @@ func TestQueueStore_DeadLetter(t *testing.T) {
 	if err := store.Enqueue(ctx, entry); err != nil {
 		t.Fatalf("Enqueue: %v", err)
 	}
-	if err := store.MoveToDeadLetter(ctx, "job-4"); err != nil {
+	if err := store.MoveToDeadLetter(ctx, "job-4", "homeserver unavailable"); err != nil {
 		t.Fatalf("MoveToDeadLetter: %v", err)
 	}
 
@@ -215,7 +215,47 @@ func TestQueueStore_DeadLetter(t *testing.T) {
 		t.Fatalf("ListByState: %v", err)
 	}
 	if len(list) != 1 || list[0].ID != "job-4" {
-		t.Errorf("want dead-letter job-4, got %v", list)
+		t.Fatalf("want dead-letter job-4, got %v", list)
+	}
+	if list[0].LastError != "homeserver unavailable" {
+		t.Errorf("want LastError 'homeserver unavailable', got %q", list[0].LastError)
+	}
+
+	// Test ListDeadLetter
+	dlList, err := store.ListDeadLetter(ctx, "acc1", 10)
+	if err != nil {
+		t.Fatalf("ListDeadLetter: %v", err)
+	}
+	if len(dlList) != 1 || dlList[0].ID != "job-4" {
+		t.Fatalf("ListDeadLetter want job-4, got %v", dlList)
+	}
+
+	// Test Redrive
+	if err := store.Redrive(ctx, "job-4"); err != nil {
+		t.Fatalf("Redrive: %v", err)
+	}
+	// Verify it transitioned back to queued with retry_count=0 and empty last_error
+	list, err = store.ListByState(ctx, "acc1", []string{"queued"})
+	if err != nil {
+		t.Fatalf("ListByState queued: %v", err)
+	}
+	if len(list) != 1 || list[0].ID != "job-4" {
+		t.Fatalf("want queued job-4 after redrive, got %v", list)
+	}
+	if list[0].RetryCount != 0 || list[0].LastError != "" {
+		t.Errorf("want retry_count=0 and empty LastError, got count=%d err=%q", list[0].RetryCount, list[0].LastError)
+	}
+
+	// Dead-letter it again and test RedriveAll
+	if err := store.MoveToDeadLetter(ctx, "job-4", "again"); err != nil {
+		t.Fatalf("MoveToDeadLetter: %v", err)
+	}
+	n, err := store.RedriveAll(ctx, "")
+	if err != nil {
+		t.Fatalf("RedriveAll: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("expected 1 row redriven, got %d", n)
 	}
 }
 

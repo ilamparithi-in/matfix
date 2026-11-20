@@ -1,15 +1,30 @@
 package routes
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/ilamparithi-in/matfix/internal/account"
 	"github.com/ilamparithi-in/matfix/internal/persistence"
 	"github.com/ilamparithi-in/matfix/internal/queue"
 )
 
 // # Response types
+
+type DeadLetterEntry struct {
+	ID             string `json:"id"`
+	AccountID      string `json:"account_id"`
+	RoomID         string `json:"room_id"`
+	RetryCount     int    `json:"retry_count"`
+	LastError      string `json:"last_error"`
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
+	CreatedAt      int64  `json:"created_at"`
+	UpdatedAt      int64  `json:"updated_at"`
+}
 
 type accountStatusEntry struct {
 	ID        string `json:"id"`
@@ -132,5 +147,77 @@ func SubscriptionsHandler(counter SubscriptionCounter, store persistence.Correla
 		}
 
 		writeJSON(w, http.StatusOK, subscriptionsResponse{})
+	}
+}
+
+// ListDeadLetterHandler handles GET /queue/dead-letter.
+func ListDeadLetterHandler(store persistence.QueueStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID := r.URL.Query().Get("account_id")
+		limit := 50
+		if lStr := r.URL.Query().Get("limit"); lStr != "" {
+			if l, err := strconv.Atoi(lStr); err == nil && l > 0 {
+				limit = l
+			}
+		}
+
+		entries, err := store.ListDeadLetter(r.Context(), accountID, limit)
+		if err != nil {
+			slog.Error("admin: list dead letter failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to query dead letter queue", "internal_error")
+			return
+		}
+
+		out := make([]DeadLetterEntry, 0, len(entries))
+		for _, e := range entries {
+			out = append(out, DeadLetterEntry{
+				ID:             e.ID,
+				AccountID:      e.AccountID,
+				RoomID:         e.RoomID,
+				RetryCount:     e.RetryCount,
+				LastError:      e.LastError,
+				IdempotencyKey: e.IdempotencyKey,
+				CreatedAt:      e.CreatedAt,
+				UpdatedAt:      e.UpdatedAt,
+			})
+		}
+		writeJSON(w, http.StatusOK, out)
+	}
+}
+
+// QueueRedriver allows rescheduling dead-lettered jobs for retry.
+type QueueRedriver interface {
+	Redrive(ctx context.Context, id string) error
+	RedriveAll(ctx context.Context, accountID string) (int64, error)
+}
+
+// RedriveQueueHandler handles POST /queue/redrive/{id}.
+func RedriveQueueHandler(redriver QueueRedriver) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		if err := redriver.Redrive(r.Context(), id); err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				writeError(w, http.StatusNotFound, err.Error(), "not_found")
+				return
+			}
+			slog.Error("admin: queue redrive failed", "id", id, "error", err)
+			writeError(w, http.StatusInternalServerError, err.Error(), "internal_error")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"redriven": true, "id": id})
+	}
+}
+
+// RedriveAllQueueHandler handles POST /queue/redrive-all.
+func RedriveAllQueueHandler(redriver QueueRedriver) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID := r.URL.Query().Get("account_id")
+		count, err := redriver.RedriveAll(r.Context(), accountID)
+		if err != nil {
+			slog.Error("admin: queue redrive all failed", "error", err)
+			writeError(w, http.StatusInternalServerError, err.Error(), "internal_error")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"redriven": true, "count": count})
 	}
 }

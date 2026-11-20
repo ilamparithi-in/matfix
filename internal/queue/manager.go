@@ -129,32 +129,78 @@ func (m *QueueManager) ScheduleRetry(
 	ctx context.Context,
 	jobID string,
 	currentRetryCount int,
+	lastError string,
 ) (retried bool, scheduledAt time.Time, err error) {
 	next := currentRetryCount + 1
 	if IsExhausted(m.policy, next) {
 		slog.Warn("queue: retries exhausted, moving to dead_letter",
 			"job_id", jobID,
 			"retry_count", next,
+			"error", lastError,
 		)
-		if err := m.MoveToDeadLetter(ctx, jobID); err != nil {
+		if err := m.MoveToDeadLetter(ctx, jobID, lastError); err != nil {
 			return false, time.Time{}, err
 		}
 		return false, time.Time{}, nil
 	}
 
 	scheduledAt = NextScheduledAt(m.policy, next)
-	if err := m.store.ScheduleRetry(ctx, jobID, next, scheduledAt.UnixMilli()); err != nil {
+	if err := m.store.ScheduleRetry(ctx, jobID, next, scheduledAt.UnixMilli(), lastError); err != nil {
 		return false, time.Time{}, fmt.Errorf("queue: schedule retry: %w", err)
 	}
 	return true, scheduledAt, nil
 }
 
 // MoveToDeadLetter permanently marks jobID as dead_letter.
-func (m *QueueManager) MoveToDeadLetter(ctx context.Context, jobID string) error {
-	if err := m.store.MoveToDeadLetter(ctx, jobID); err != nil {
+func (m *QueueManager) MoveToDeadLetter(ctx context.Context, jobID string, lastError string) error {
+	if err := m.store.MoveToDeadLetter(ctx, jobID, lastError); err != nil {
 		return fmt.Errorf("queue: move to dead_letter: %w", err)
 	}
 	return nil
+}
+
+// Redrive reschedules a dead-letter job for immediate retry and wakes idle workers.
+func (m *QueueManager) Redrive(ctx context.Context, jobID string) error {
+	if err := m.store.Redrive(ctx, jobID); err != nil {
+		return fmt.Errorf("queue: redrive %s: %w", jobID, err)
+	}
+	select {
+	case m.notify <- struct{}{}:
+	default:
+	}
+	return nil
+}
+
+// RedriveAll reschedules all dead-letter jobs (optionally for a specific account) for immediate retry and wakes idle workers.
+func (m *QueueManager) RedriveAll(ctx context.Context, accountID string) (int64, error) {
+	n, err := m.store.RedriveAll(ctx, accountID)
+	if err != nil {
+		return 0, fmt.Errorf("queue: redrive all: %w", err)
+	}
+	if n > 0 {
+		select {
+		case m.notify <- struct{}{}:
+		default:
+		}
+	}
+	return n, nil
+}
+
+// ListDeadLetter returns dead-letter jobs.
+func (m *QueueManager) ListDeadLetter(ctx context.Context, accountID string, limit int) ([]*Job, error) {
+	entries, err := m.store.ListDeadLetter(ctx, accountID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("queue: list dead letter: %w", err)
+	}
+	jobs := make([]*Job, 0, len(entries))
+	for i := range entries {
+		j, err := entryToJob(&entries[i])
+		if err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, j)
+	}
+	return jobs, nil
 }
 
 // # Internal helpers
@@ -174,6 +220,7 @@ func entryToJob(e *persistence.QueueEntry) (*Job, error) {
 		RetryCount:     e.RetryCount,
 		ScheduledAt:    time.UnixMilli(e.ScheduledAt),
 		IdempotencyKey: e.IdempotencyKey,
+		LastError:      e.LastError,
 		CreatedAt:      time.UnixMilli(e.CreatedAt),
 		UpdatedAt:      time.UnixMilli(e.UpdatedAt),
 	}, nil

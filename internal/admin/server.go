@@ -14,6 +14,7 @@ import (
 	"github.com/ilamparithi-in/matfix/internal/account"
 	adminroutes "github.com/ilamparithi-in/matfix/internal/admin/routes"
 	"github.com/ilamparithi-in/matfix/internal/persistence"
+	"github.com/ilamparithi-in/matfix/internal/queue"
 	"github.com/ilamparithi-in/matfix/internal/webhook"
 )
 
@@ -32,6 +33,9 @@ type Config struct {
 
 	// QueueStore is used for queue depth inspection.
 	QueueStore persistence.QueueStore
+
+	// QueueMgr manages outbound message queue operations.
+	QueueMgr *queue.QueueManager
 
 	// CorrStore is used for active subscription inspection.
 	CorrStore persistence.CorrelationStore
@@ -65,9 +69,16 @@ func New(cfg Config) *Server {
 	r.Delete("/keys/{id}", adminroutes.RevokeKeyHandler(cfg.APIKeyStore))
 	r.Post("/keys/{id}/rotate", adminroutes.RotateKeyHandler(cfg.APIKeyStore))
 
-	// Read-only inspection.
+	// Read-only inspection & queue management.
+	var redriver adminroutes.QueueRedriver = cfg.QueueStore
+	if cfg.QueueMgr != nil {
+		redriver = cfg.QueueMgr
+	}
 	r.Get("/accounts", adminroutes.AccountsHandler(cfg.Accounts))
 	r.Get("/queue", adminroutes.QueueHandler(cfg.Accounts, cfg.QueueStore))
+	r.Get("/queue/dead-letter", adminroutes.ListDeadLetterHandler(cfg.QueueStore))
+	r.Post("/queue/redrive/{id}", adminroutes.RedriveQueueHandler(redriver))
+	r.Post("/queue/redrive-all", adminroutes.RedriveAllQueueHandler(redriver))
 	r.Get("/subscriptions", adminroutes.SubscriptionsHandler(cfg.Correlation, cfg.CorrStore))
 
 	// Webhooks management and inspection.

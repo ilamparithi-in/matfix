@@ -183,7 +183,7 @@ func TestDeadLetter_AfterMaxRetries(t *testing.T) {
 			t.Fatalf("PullNext attempt %d returned nil", i)
 		}
 		currentCount = pulled.RetryCount
-		retried, _, retryErr := mgr.ScheduleRetry(ctx, pulled.ID, currentCount)
+		retried, _, retryErr := mgr.ScheduleRetry(ctx, pulled.ID, currentCount, "send failed")
 		if retryErr != nil {
 			t.Fatalf("ScheduleRetry attempt %d: %v", i, retryErr)
 		}
@@ -200,14 +200,30 @@ func TestDeadLetter_AfterMaxRetries(t *testing.T) {
 		}
 	}
 
-	// After exhaustion there must be no pullable job.
-	_ = job.ID // only used to keep initial reference
-	final, err := mgr.PullNext(ctx, "acc1")
+	// Verify job is now listed in dead letter
+	dlJobs, err := mgr.ListDeadLetter(ctx, "acc1", 10)
 	if err != nil {
-		t.Fatalf("PullNext after dead_letter: %v", err)
+		t.Fatalf("ListDeadLetter: %v", err)
 	}
-	if final != nil {
-		t.Errorf("expected no pullable job after dead_letter, got %s", final.ID)
+	if len(dlJobs) != 1 || dlJobs[0].ID != job.ID {
+		t.Fatalf("expected 1 dead-letter job with ID %s, got %v", job.ID, dlJobs)
+	}
+	if dlJobs[0].LastError != "send failed" {
+		t.Errorf("expected LastError 'send failed', got %q", dlJobs[0].LastError)
+	}
+
+	// Test Redrive
+	if err := mgr.Redrive(ctx, job.ID); err != nil {
+		t.Fatalf("Redrive: %v", err)
+	}
+
+	// After redrive, the job should be pullable again!
+	redriven, err := mgr.PullNext(ctx, "acc1")
+	if err != nil {
+		t.Fatalf("PullNext after redrive: %v", err)
+	}
+	if redriven == nil || redriven.ID != job.ID {
+		t.Fatalf("expected pullable job %s after redrive, got %v", job.ID, redriven)
 	}
 }
 

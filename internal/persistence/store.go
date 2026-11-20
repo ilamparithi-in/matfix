@@ -28,6 +28,7 @@ type QueueEntry struct {
 	RetryCount     int
 	ScheduledAt    int64  // Unix ms; 0 = immediately eligible
 	IdempotencyKey string // empty = no idempotency key
+	LastError      string
 	CreatedAt      int64
 	UpdatedAt      int64
 }
@@ -103,14 +104,20 @@ type QueueStore interface {
 	PullNext(ctx context.Context, accountID string) (*QueueEntry, error)
 	// UpdateState sets the state field of a job.
 	UpdateState(ctx context.Context, id, state string) error
-	// ScheduleRetry sets the job back to state "queued" with updated retry metadata.
-	ScheduleRetry(ctx context.Context, id string, retryCount int, scheduledAt int64) error
-	// MoveToDeadLetter marks a job as "dead_letter".
-	MoveToDeadLetter(ctx context.Context, id string) error
+	// ScheduleRetry sets the job back to state "queued" with updated retry metadata and last error.
+	ScheduleRetry(ctx context.Context, id string, retryCount int, scheduledAt int64, lastError string) error
+	// MoveToDeadLetter marks a job as "dead_letter" with last error.
+	MoveToDeadLetter(ctx context.Context, id string, lastError string) error
 	// RestoreStuck moves all "sending" jobs back to "queued" (crash recovery on startup).
 	RestoreStuck(ctx context.Context) (int64, error)
 	// ListByState returns jobs for an account whose state is one of states.
 	ListByState(ctx context.Context, accountID string, states []string) ([]QueueEntry, error)
+	// Redrive marks a dead_letter job as "queued" with retry_count=0, scheduled_at=now, and cleared last_error.
+	Redrive(ctx context.Context, id string) error
+	// RedriveAll marks all dead_letter jobs (optionally filtered by accountID) as "queued" with retry_count=0, scheduled_at=now, and cleared last_error.
+	RedriveAll(ctx context.Context, accountID string) (int64, error)
+	// ListDeadLetter returns dead-letter jobs, optionally filtered by accountID.
+	ListDeadLetter(ctx context.Context, accountID string, limit int) ([]QueueEntry, error)
 }
 
 // CorrelationStore manages ask/receive correlation records.
@@ -222,22 +229,22 @@ func (s *sqlSyncStore) SetNextBatch(ctx context.Context, accountID, token string
 
 type sqlQueueStore struct{ db *sql.DB }
 
-const queueCols = `id, account_id, room_id, payload, state, retry_count, scheduled_at, idempotency_key, created_at, updated_at`
+const queueCols = `id, account_id, room_id, payload, state, retry_count, scheduled_at, idempotency_key, last_error, created_at, updated_at`
 
 func scanQueueEntry(row scanner) (QueueEntry, error) {
 	var e QueueEntry
 	err := row.Scan(
 		&e.ID, &e.AccountID, &e.RoomID, &e.Payload, &e.State,
-		&e.RetryCount, &e.ScheduledAt, &e.IdempotencyKey, &e.CreatedAt, &e.UpdatedAt,
+		&e.RetryCount, &e.ScheduledAt, &e.IdempotencyKey, &e.LastError, &e.CreatedAt, &e.UpdatedAt,
 	)
 	return e, err
 }
 
 func (s *sqlQueueStore) Enqueue(ctx context.Context, entry QueueEntry) error {
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO outbound_queue (`+queueCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO outbound_queue (`+queueCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		entry.ID, entry.AccountID, entry.RoomID, entry.Payload, entry.State,
-		entry.RetryCount, entry.ScheduledAt, entry.IdempotencyKey, entry.CreatedAt, entry.UpdatedAt,
+		entry.RetryCount, entry.ScheduledAt, entry.IdempotencyKey, entry.LastError, entry.CreatedAt, entry.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("queue_store: enqueue: %w", err)
@@ -312,10 +319,10 @@ func (s *sqlQueueStore) UpdateState(ctx context.Context, id, state string) error
 	return nil
 }
 
-func (s *sqlQueueStore) ScheduleRetry(ctx context.Context, id string, retryCount int, scheduledAt int64) error {
+func (s *sqlQueueStore) ScheduleRetry(ctx context.Context, id string, retryCount int, scheduledAt int64, lastError string) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE outbound_queue SET state = 'queued', retry_count = ?, scheduled_at = ?, updated_at = ? WHERE id = ?`,
-		retryCount, scheduledAt, time.Now().UnixMilli(), id,
+		`UPDATE outbound_queue SET state = 'queued', retry_count = ?, scheduled_at = ?, last_error = ?, updated_at = ? WHERE id = ?`,
+		retryCount, scheduledAt, lastError, time.Now().UnixMilli(), id,
 	)
 	if err != nil {
 		return fmt.Errorf("queue_store: schedule retry: %w", err)
@@ -323,8 +330,86 @@ func (s *sqlQueueStore) ScheduleRetry(ctx context.Context, id string, retryCount
 	return nil
 }
 
-func (s *sqlQueueStore) MoveToDeadLetter(ctx context.Context, id string) error {
-	return s.UpdateState(ctx, id, "dead_letter")
+func (s *sqlQueueStore) MoveToDeadLetter(ctx context.Context, id string, lastError string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE outbound_queue SET state = 'dead_letter', last_error = ?, updated_at = ? WHERE id = ?`,
+		lastError, time.Now().UnixMilli(), id,
+	)
+	if err != nil {
+		return fmt.Errorf("queue_store: move to dead letter: %w", err)
+	}
+	return nil
+}
+
+func (s *sqlQueueStore) Redrive(ctx context.Context, id string) error {
+	now := time.Now().UnixMilli()
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE outbound_queue SET state = 'queued', retry_count = 0, scheduled_at = ?, last_error = '', updated_at = ? WHERE id = ? AND state = 'dead_letter'`,
+		now, now, id,
+	)
+	if err != nil {
+		return fmt.Errorf("queue_store: redrive %s: %w", id, err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("queue_store: entry %s not found or not in dead_letter state", id)
+	}
+	return nil
+}
+
+func (s *sqlQueueStore) RedriveAll(ctx context.Context, accountID string) (int64, error) {
+	now := time.Now().UnixMilli()
+	var res sql.Result
+	var err error
+	if accountID == "" {
+		res, err = s.db.ExecContext(ctx,
+			`UPDATE outbound_queue SET state = 'queued', retry_count = 0, scheduled_at = ?, last_error = '', updated_at = ? WHERE state = 'dead_letter'`,
+			now, now,
+		)
+	} else {
+		res, err = s.db.ExecContext(ctx,
+			`UPDATE outbound_queue SET state = 'queued', retry_count = 0, scheduled_at = ?, last_error = '', updated_at = ? WHERE state = 'dead_letter' AND account_id = ?`,
+			now, now, accountID,
+		)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("queue_store: redrive all: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
+func (s *sqlQueueStore) ListDeadLetter(ctx context.Context, accountID string, limit int) ([]QueueEntry, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	var rows *sql.Rows
+	var err error
+	if accountID == "" {
+		rows, err = s.db.QueryContext(ctx,
+			`SELECT `+queueCols+` FROM outbound_queue WHERE state = 'dead_letter' ORDER BY updated_at DESC LIMIT ?`,
+			limit,
+		)
+	} else {
+		rows, err = s.db.QueryContext(ctx,
+			`SELECT `+queueCols+` FROM outbound_queue WHERE state = 'dead_letter' AND account_id = ? ORDER BY updated_at DESC LIMIT ?`,
+			accountID, limit,
+		)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("queue_store: list dead letter: %w", err)
+	}
+	defer rows.Close()
+
+	var entries []QueueEntry
+	for rows.Next() {
+		e, err := scanQueueEntry(rows)
+		if err != nil {
+			return nil, fmt.Errorf("queue_store: scan dead letter: %w", err)
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
 }
 
 func (s *sqlQueueStore) RestoreStuck(ctx context.Context) (int64, error) {
