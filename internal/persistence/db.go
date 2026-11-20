@@ -59,6 +59,7 @@ func (d *DB) Stores() Stores {
 		Correlation: NewCorrelationStore(d.db),
 		APIKey:      NewAPIKeyStore(d.db),
 		EventCache:  NewEventCacheStore(d.db),
+		Webhook:     NewWebhookStore(d.db),
 	}
 }
 
@@ -69,4 +70,5 @@ type Stores struct {
 	Correlation CorrelationStore
 	APIKey      APIKeyStore
 	EventCache  EventCacheStore
+	Webhook     WebhookStore
 }

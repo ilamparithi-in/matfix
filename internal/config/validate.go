@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // Validate performs fail-fast startup validation of the configuration.
@@ -48,6 +49,16 @@ func Validate(c *Config) error {
 
 	if c.Queue.Concurrency <= 0 {
 		errs = append(errs, "queue.concurrency must be greater than zero")
+	}
+
+	if c.Webhooks.Concurrency <= 0 {
+		c.Webhooks.Concurrency = 4
+	}
+	if c.Webhooks.File == "" {
+		c.Webhooks.File = "webhooks.yaml"
+	}
+	if c.Webhooks.DefaultTimeout <= 0 {
+		c.Webhooks.DefaultTimeout = Duration(10 * time.Second)
 	}
 
 	switch c.Crypto.TrustPolicy {

@@ -121,6 +121,11 @@ func envelopesToPayloads(envs []bus.EventEnvelope) []apires.EventPayload {
 	return out
 }
 
+// EnvelopeToPayload converts one bus.EventEnvelope to a response EventPayload.
+func EnvelopeToPayload(env bus.EventEnvelope) apires.EventPayload {
+	return envelopeToPayload(env)
+}
+
 // envelopeToPayload converts one bus.EventEnvelope to a response EventPayload.
 func envelopeToPayload(env bus.EventEnvelope) apires.EventPayload {
 	p := apires.EventPayload{

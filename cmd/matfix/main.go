@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/ilamparithi-in/matfix/internal/account"
 	"github.com/ilamparithi-in/matfix/internal/admin"
@@ -21,6 +22,7 @@ import (
 	"github.com/ilamparithi-in/matfix/internal/queue"
 	"github.com/ilamparithi-in/matfix/internal/submission"
 	"github.com/ilamparithi-in/matfix/internal/version"
+	"github.com/ilamparithi-in/matfix/internal/webhook"
 	"github.com/ilamparithi-in/matfix/internal/worker"
 )
 
@@ -136,6 +138,21 @@ func main() {
 	})
 	go correlationMgr.Start(ctx)
 
+	// # Webhooks
+
+	webhookMgr, err := webhook.NewManager(webhook.Config{
+		FilePath:       cfg.Webhooks.File,
+		Store:          stores.Webhook,
+		Bus:            eventBus,
+		DefaultTimeout: time.Duration(cfg.Webhooks.DefaultTimeout),
+		Concurrency:    cfg.Webhooks.Concurrency,
+	})
+	if err != nil {
+		slog.Error("matfix: webhook manager initialization failed", "error", err)
+		os.Exit(1)
+	}
+	webhookMgr.Start(ctx)
+
 	// # Admin Socket Server
 
 	adminSrv := admin.New(admin.Config{
@@ -145,6 +162,7 @@ func main() {
 		QueueStore:  stores.Queue,
 		CorrStore:   stores.Correlation,
 		Correlation: correlationMgr,
+		Webhooks:    webhookMgr,
 	})
 	go func() {
 		if err := adminSrv.Start(); err != nil {
@@ -178,5 +196,5 @@ func main() {
 	sig := <-sigCh
 	slog.Info("matfix: shutting down", "signal", sig.String())
 
-	shutdown(apiSrv, adminSrv, workers, accounts, db)
+	shutdown(apiSrv, adminSrv, webhookMgr, workers, accounts, db)
 }

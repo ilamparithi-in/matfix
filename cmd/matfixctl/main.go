@@ -5,14 +5,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/ilamparithi-in/matfix/internal/correlation"
 	"github.com/ilamparithi-in/matfix/internal/version"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 // # Global state
@@ -175,7 +178,7 @@ func main() {
 	root.PersistentFlags().StringVar(&socketPath, "socket", "/run/matfix/admin.sock",
 		"path to the matfix admin UNIX socket")
 
-	root.AddCommand(keysCmd(), accountsCmd(), queueCmd(), subscriptionsCmd())
+	root.AddCommand(keysCmd(), accountsCmd(), queueCmd(), subscriptionsCmd(), webhooksCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -451,6 +454,278 @@ func subscriptionsCmd() *cobra.Command {
 
 			fmt.Printf("Asks:     %d\n", result.Asks)
 			fmt.Printf("Receives: %d\n", result.Receives)
+			return nil
+		},
+	}
+}
+
+// # webhooks
+
+type webhookRuleEntry struct {
+	ID      string                 `json:"id"`
+	URL     string                 `json:"url"`
+	Filter  correlation.FilterNode `json:"filter"`
+	Timeout string                 `json:"timeout,omitempty"`
+}
+
+func webhooksCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "webhooks",
+		Short: "Manage outbound webhook rules and retry queue",
+	}
+	cmd.AddCommand(
+		webhooksListCmd(),
+		webhooksInspectCmd(),
+		webhooksCreateCmd(),
+		webhooksDeleteCmd(),
+		webhooksReloadCmd(),
+		webhooksQueueCmd(),
+		webhooksRedriveCmd(),
+		webhooksRedriveAllCmd(),
+	)
+	return cmd
+}
+
+func webhooksListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List all configured webhook rules",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			resp, err := doGet(adminBase + "/webhooks")
+			if err != nil {
+				return fmt.Errorf("connect: %w", err)
+			}
+			defer resp.Body.Close()
+			if err := checkError(resp); err != nil {
+				return err
+			}
+			var rules []webhookRuleEntry
+			if err := json.NewDecoder(resp.Body).Decode(&rules); err != nil {
+				return err
+			}
+			if len(rules) == 0 {
+				fmt.Println("No webhooks configured.")
+				return nil
+			}
+			fmt.Printf("%-24s  %-35s  %-20s  %s\n", "ID", "URL", "Rooms", "Event Types")
+			fmt.Println(strings.Repeat("-", 90))
+			for _, r := range rules {
+				var rooms []string
+				if r.Filter.RoomID != nil && len(r.Filter.RoomID.Include) > 0 {
+					rooms = r.Filter.RoomID.Include
+				}
+				roomsStr := strings.Join(rooms, ", ")
+				if roomsStr == "" {
+					roomsStr = "*"
+				}
+				var eventTypes []string
+				if r.Filter.EventType != nil && len(r.Filter.EventType.Include) > 0 {
+					eventTypes = r.Filter.EventType.Include
+				}
+				evStr := strings.Join(eventTypes, ", ")
+				if evStr == "" {
+					evStr = "*"
+				}
+				fmt.Printf("%-24s  %-35s  %-20s  %s\n", r.ID, r.URL, roomsStr, evStr)
+			}
+			return nil
+		},
+	}
+}
+
+func webhooksInspectCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "inspect <id>",
+		Short: "Inspect a webhook rule",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := args[0]
+			resp, err := doGet(adminBase + "/webhooks/" + id)
+			if err != nil {
+				return fmt.Errorf("connect: %w", err)
+			}
+			defer resp.Body.Close()
+			if err := checkError(resp); err != nil {
+				return err
+			}
+			var out bytes.Buffer
+			var raw any
+			if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+				return err
+			}
+			enc := json.NewEncoder(&out)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(raw); err != nil {
+				return err
+			}
+			fmt.Print(out.String())
+			return nil
+		},
+	}
+}
+
+func webhooksCreateCmd() *cobra.Command {
+	var filePath string
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create or update a webhook rule from a YAML or JSON file",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if filePath == "" {
+				return fmt.Errorf("--file is required")
+			}
+			var data []byte
+			var err error
+			if filePath == "-" {
+				data, err = io.ReadAll(os.Stdin)
+			} else {
+				data, err = os.ReadFile(filePath)
+			}
+			if err != nil {
+				return fmt.Errorf("read file: %w", err)
+			}
+			var rule any
+			if err := yaml.Unmarshal(data, &rule); err != nil {
+				return fmt.Errorf("parse rule: %w", err)
+			}
+			if ruleMap, ok := rule.(map[string]any); ok {
+				if _, ok := ruleMap["webhooks"]; ok {
+					return fmt.Errorf("file contains multiple webhooks under 'webhooks:'; use 'matfixctl webhooks reload' to load the full webhooks.yaml file, or specify a single webhook rule to create/update")
+				}
+			}
+			resp, err := doJSON(http.MethodPost, adminBase+"/webhooks", rule)
+			if err != nil {
+				return fmt.Errorf("connect: %w", err)
+			}
+			defer resp.Body.Close()
+			if err := checkError(resp); err != nil {
+				return err
+			}
+			var created struct {
+				ID  string `json:"id"`
+				URL string `json:"url"`
+			}
+			_ = json.NewDecoder(resp.Body).Decode(&created)
+			fmt.Printf("Webhook %q created successfully (%s)\n", created.ID, created.URL)
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&filePath, "file", "f", "", "path to YAML or JSON file containing the webhook rule ('-' for stdin)")
+	return cmd
+}
+
+func webhooksDeleteCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "delete <id>",
+		Short: "Delete a webhook rule",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := args[0]
+			resp, err := doDelete(adminBase + "/webhooks/" + id)
+			if err != nil {
+				return fmt.Errorf("connect: %w", err)
+			}
+			defer resp.Body.Close()
+			if err := checkError(resp); err != nil {
+				return err
+			}
+			fmt.Printf("Webhook %q deleted.\n", id)
+			return nil
+		},
+	}
+}
+
+func webhooksReloadCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "reload",
+		Short: "Reload webhook rules from disk",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			resp, err := doPost(adminBase + "/webhooks/reload")
+			if err != nil {
+				return fmt.Errorf("connect: %w", err)
+			}
+			defer resp.Body.Close()
+			if err := checkError(resp); err != nil {
+				return err
+			}
+			var res struct {
+				Reloaded bool `json:"reloaded"`
+				Count    int  `json:"count"`
+			}
+			_ = json.NewDecoder(resp.Body).Decode(&res)
+			fmt.Printf("Webhook rules reloaded successfully (%d active rules).\n", res.Count)
+			return nil
+		},
+	}
+}
+
+func webhooksQueueCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "queue",
+		Short: "Show webhook retry queue depth",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			resp, err := doGet(adminBase + "/webhooks/queue")
+			if err != nil {
+				return fmt.Errorf("connect: %w", err)
+			}
+			defer resp.Body.Close()
+			if err := checkError(resp); err != nil {
+				return err
+			}
+			var res struct {
+				Failed     int `json:"failed"`
+				Sending    int `json:"sending"`
+				DeadLetter int `json:"dead_letter"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+				return err
+			}
+			fmt.Printf("Sending:           %d\n", res.Sending)
+			fmt.Printf("Failed (retrying): %d\n", res.Failed)
+			fmt.Printf("Dead Letter:       %d\n", res.DeadLetter)
+			return nil
+		},
+	}
+}
+
+func webhooksRedriveCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "redrive <id>",
+		Short: "Schedule a dead-lettered webhook queue entry for immediate retry",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := args[0]
+			resp, err := doPost(adminBase + "/webhooks/queue/redrive/" + id)
+			if err != nil {
+				return fmt.Errorf("connect: %w", err)
+			}
+			defer resp.Body.Close()
+			if err := checkError(resp); err != nil {
+				return err
+			}
+			fmt.Printf("Webhook queue entry %q scheduled for retry.\n", id)
+			return nil
+		},
+	}
+}
+
+func webhooksRedriveAllCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "redrive-all",
+		Short: "Schedule all dead-lettered webhook queue entries for immediate retry",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			resp, err := doPost(adminBase + "/webhooks/queue/redrive-all")
+			if err != nil {
+				return fmt.Errorf("connect: %w", err)
+			}
+			defer resp.Body.Close()
+			if err := checkError(resp); err != nil {
+				return err
+			}
+			var res struct {
+				Count int64 `json:"count"`
+			}
+			_ = json.NewDecoder(resp.Body).Decode(&res)
+			fmt.Printf("Redrove %d dead-lettered webhook entries.\n", res.Count)
 			return nil
 		},
 	}

@@ -11,6 +11,7 @@ type Config struct {
 	Crypto        CryptoConfig        `yaml:"crypto"`
 	Logging       LoggingConfig       `yaml:"logging"`
 	Observability ObservabilityConfig `yaml:"observability"`
+	Webhooks      WebhookConfig       `yaml:"webhooks"`
 }
 
 // ServerConfig controls the HTTP API listener.
@@ -74,4 +75,11 @@ type LoggingConfig struct {
 type ObservabilityConfig struct {
 	MetricsBind string `yaml:"metrics_bind"`
 	HealthPath  string `yaml:"health_path"`
+}
+
+// WebhookConfig controls outbound event webhooks.
+type WebhookConfig struct {
+	File           string   `yaml:"file"`
+	Concurrency    int      `yaml:"concurrency"`
+	DefaultTimeout Duration `yaml:"default_timeout"`
 }

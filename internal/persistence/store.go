@@ -64,6 +64,24 @@ type EventCacheEntry struct {
 	SeenAt    int64
 }
 
+// WebhookQueueEntry represents a failed or dead-lettered webhook delivery in the persistent queue.
+type WebhookQueueEntry struct {
+	ID             string
+	WebhookID      string
+	URL            string
+	Payload        string
+	HeadersJSON    string
+	Secret         string
+	State          string // "failed" | "dead_letter"
+	RetryCount     int
+	MaxRetries     int
+	ScheduledAt    int64
+	LastError      string
+	LastStatusCode int
+	CreatedAt      int64
+	UpdatedAt      int64
+}
+
 // # Interfaces
 
 // SyncStore manages per-account sync token state.
@@ -127,6 +145,21 @@ type EventCacheStore interface {
 	Prune(ctx context.Context, before int64) (int64, error)
 }
 
+// WebhookStore manages persistent webhook delivery records for retries.
+type WebhookStore interface {
+	RecordFailure(ctx context.Context, entry WebhookQueueEntry) error
+	AcquireNextRetry(ctx context.Context, now int64, limit int) ([]WebhookQueueEntry, error)
+	DeleteSuccess(ctx context.Context, id string) error
+	UpdateRetryFailure(ctx context.Context, id string, nextScheduledAt int64, statusCode int, errMsg string) error
+	MarkDeadLetter(ctx context.Context, id string, statusCode int, errMsg string) error
+	ListByState(ctx context.Context, state string, limit int) ([]WebhookQueueEntry, error)
+	GetByID(ctx context.Context, id string) (*WebhookQueueEntry, error)
+	Redrive(ctx context.Context, id string, now int64) error
+	RedriveAll(ctx context.Context, now int64) (int64, error)
+	RestoreStuck(ctx context.Context, now int64) (int64, error)
+	CountByState(ctx context.Context) (failed int, sending int, deadLetter int, err error)
+}
+
 // # Constructors
 
 // NewSyncStore returns a SyncStore backed by db.
@@ -143,6 +176,9 @@ func NewAPIKeyStore(db *sql.DB) APIKeyStore { return &sqlAPIKeyStore{db: db} }
 
 // NewEventCacheStore returns an EventCacheStore backed by db.
 func NewEventCacheStore(db *sql.DB) EventCacheStore { return &sqlEventCacheStore{db: db} }
+
+// NewWebhookStore returns a WebhookStore backed by db.
+func NewWebhookStore(db *sql.DB) WebhookStore { return &sqlWebhookStore{db: db} }
 
 // # scanner helper
 
@@ -544,4 +580,216 @@ func (s *sqlEventCacheStore) Prune(ctx context.Context, before int64) (int64, er
 	}
 	n, _ := res.RowsAffected()
 	return n, nil
+}
+
+// # WebhookStore implementation
+
+type sqlWebhookStore struct{ db *sql.DB }
+
+const webhookCols = `id, webhook_id, url, payload, headers_json, secret, state, retry_count, max_retries, scheduled_at, last_error, last_status_code, created_at, updated_at`
+
+func (s *sqlWebhookStore) RecordFailure(ctx context.Context, entry WebhookQueueEntry) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO webhook_queue (`+webhookCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		entry.ID, entry.WebhookID, entry.URL, entry.Payload, entry.HeadersJSON, entry.Secret,
+		entry.State, entry.RetryCount, entry.MaxRetries, entry.ScheduledAt, entry.LastError,
+		entry.LastStatusCode, entry.CreatedAt, entry.UpdatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("webhook_store: record failure: %w", err)
+	}
+	return nil
+}
+
+func (s *sqlWebhookStore) AcquireNextRetry(ctx context.Context, now int64, limit int) ([]WebhookQueueEntry, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("webhook_store: begin tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	rows, err := tx.QueryContext(ctx,
+		`SELECT `+webhookCols+` FROM webhook_queue WHERE state = 'failed' AND scheduled_at <= ? ORDER BY scheduled_at ASC LIMIT ?`,
+		now, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("webhook_store: acquire next retry: %w", err)
+	}
+	defer rows.Close()
+
+	var entries []WebhookQueueEntry
+	for rows.Next() {
+		var e WebhookQueueEntry
+		if err := rows.Scan(
+			&e.ID, &e.WebhookID, &e.URL, &e.Payload, &e.HeadersJSON, &e.Secret,
+			&e.State, &e.RetryCount, &e.MaxRetries, &e.ScheduledAt, &e.LastError,
+			&e.LastStatusCode, &e.CreatedAt, &e.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("webhook_store: scan retry entry: %w", err)
+		}
+		entries = append(entries, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("webhook_store: rows err: %w", err)
+	}
+	rows.Close()
+
+	if len(entries) > 0 {
+		updateNow := time.Now().UnixMilli()
+		for _, e := range entries {
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE webhook_queue SET state = 'sending', updated_at = ? WHERE id = ?`,
+				updateNow, e.ID,
+			); err != nil {
+				return nil, fmt.Errorf("webhook_store: mark sending: %w", err)
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("webhook_store: commit acquire: %w", err)
+	}
+	return entries, nil
+}
+
+func (s *sqlWebhookStore) DeleteSuccess(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM webhook_queue WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("webhook_store: delete success: %w", err)
+	}
+	return nil
+}
+
+func (s *sqlWebhookStore) UpdateRetryFailure(ctx context.Context, id string, nextScheduledAt int64, statusCode int, errMsg string) error {
+	now := time.Now().UnixMilli()
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE webhook_queue SET state = 'failed', retry_count = retry_count + 1, scheduled_at = ?, last_status_code = ?, last_error = ?, updated_at = ? WHERE id = ?`,
+		nextScheduledAt, statusCode, errMsg, now, id,
+	)
+	if err != nil {
+		return fmt.Errorf("webhook_store: update retry failure: %w", err)
+	}
+	return nil
+}
+
+func (s *sqlWebhookStore) MarkDeadLetter(ctx context.Context, id string, statusCode int, errMsg string) error {
+	now := time.Now().UnixMilli()
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE webhook_queue SET state = 'dead_letter', last_status_code = ?, last_error = ?, updated_at = ? WHERE id = ?`,
+		statusCode, errMsg, now, id,
+	)
+	if err != nil {
+		return fmt.Errorf("webhook_store: mark dead letter: %w", err)
+	}
+	return nil
+}
+
+func (s *sqlWebhookStore) ListByState(ctx context.Context, state string, limit int) ([]WebhookQueueEntry, error) {
+	query := `SELECT ` + webhookCols + ` FROM webhook_queue WHERE state = ? ORDER BY created_at DESC`
+	var rows *sql.Rows
+	var err error
+	if limit > 0 {
+		query += ` LIMIT ?`
+		rows, err = s.db.QueryContext(ctx, query, state, limit)
+	} else {
+		rows, err = s.db.QueryContext(ctx, query, state)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("webhook_store: list by state: %w", err)
+	}
+	defer rows.Close()
+
+	var entries []WebhookQueueEntry
+	for rows.Next() {
+		var e WebhookQueueEntry
+		if err := rows.Scan(
+			&e.ID, &e.WebhookID, &e.URL, &e.Payload, &e.HeadersJSON, &e.Secret,
+			&e.State, &e.RetryCount, &e.MaxRetries, &e.ScheduledAt, &e.LastError,
+			&e.LastStatusCode, &e.CreatedAt, &e.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("webhook_store: scan entry: %w", err)
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
+func (s *sqlWebhookStore) GetByID(ctx context.Context, id string) (*WebhookQueueEntry, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT `+webhookCols+` FROM webhook_queue WHERE id = ?`, id)
+	var e WebhookQueueEntry
+	err := row.Scan(
+		&e.ID, &e.WebhookID, &e.URL, &e.Payload, &e.HeadersJSON, &e.Secret,
+		&e.State, &e.RetryCount, &e.MaxRetries, &e.ScheduledAt, &e.LastError,
+		&e.LastStatusCode, &e.CreatedAt, &e.UpdatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("webhook_store: get by id: %w", err)
+	}
+	return &e, nil
+}
+
+func (s *sqlWebhookStore) Redrive(ctx context.Context, id string, now int64) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE webhook_queue SET state = 'failed', scheduled_at = ?, retry_count = 0, updated_at = ? WHERE id = ? AND state = 'dead_letter'`,
+		now, now, id,
+	)
+	if err != nil {
+		return fmt.Errorf("webhook_store: redrive: %w", err)
+	}
+	return nil
+}
+
+func (s *sqlWebhookStore) RedriveAll(ctx context.Context, now int64) (int64, error) {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE webhook_queue SET state = 'failed', scheduled_at = ?, retry_count = 0, updated_at = ? WHERE state = 'dead_letter'`,
+		now, now,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("webhook_store: redrive all: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
+func (s *sqlWebhookStore) RestoreStuck(ctx context.Context, now int64) (int64, error) {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE webhook_queue SET state = 'failed', scheduled_at = ?, updated_at = ? WHERE state = 'sending'`,
+		now, now,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("webhook_store: restore stuck: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
+func (s *sqlWebhookStore) CountByState(ctx context.Context) (failed int, sending int, deadLetter int, err error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT state, COUNT(*) FROM webhook_queue GROUP BY state`)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("webhook_store: count by state: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var state string
+		var count int
+		if err := rows.Scan(&state, &count); err != nil {
+			return 0, 0, 0, err
+		}
+		switch state {
+		case "failed":
+			failed = count
+		case "sending":
+			sending = count
+		case "dead_letter":
+			deadLetter = count
+		}
+	}
+	return failed, sending, deadLetter, rows.Err()
 }

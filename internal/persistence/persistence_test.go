@@ -43,13 +43,13 @@ func TestMigrate_Idempotent(t *testing.T) {
 		}
 	}
 
-	// All five migrations should be recorded.
+	// All migrations should be recorded.
 	var count int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if count != 5 {
-		t.Errorf("want 5 migration records, got %d", count)
+	if count != 6 {
+		t.Errorf("want 6 migration records, got %d", count)
 	}
 }
 
@@ -404,5 +404,113 @@ func TestEventCacheStore_HasInsertPrune(t *testing.T) {
 	has, _ = store.Has(ctx, "evt-1", "acc1")
 	if has {
 		t.Error("want Has=false after prune")
+	}
+}
+
+// # WebhookStore tests
+
+func TestWebhookStore_Lifecycle(t *testing.T) {
+	db := openTestDB(t)
+	store := persistence.NewWebhookStore(db)
+	ctx := context.Background()
+
+	now := time.Now().UnixMilli()
+	entry := persistence.WebhookQueueEntry{
+		ID:             "wh-job-1",
+		WebhookID:      "hook-deploy",
+		URL:            "http://example.com/webhook",
+		Payload:        `{"body":"hello"}`,
+		HeadersJSON:    `{"Authorization":"Bearer 123"}`,
+		Secret:         "whsec_test",
+		State:          "failed",
+		RetryCount:     1,
+		MaxRetries:     3,
+		ScheduledAt:    now - 1000, // eligible for retry
+		LastError:      "connection refused",
+		LastStatusCode: 503,
+		CreatedAt:      now - 1000,
+		UpdatedAt:      now - 1000,
+	}
+
+	// 1. Record failure
+	if err := store.RecordFailure(ctx, entry); err != nil {
+		t.Fatalf("RecordFailure: %v", err)
+	}
+
+	// 2. AcquireNextRetry
+	ready, err := store.AcquireNextRetry(ctx, now, 10)
+	if err != nil {
+		t.Fatalf("AcquireNextRetry: %v", err)
+	}
+	if len(ready) != 1 || ready[0].ID != "wh-job-1" {
+		t.Fatalf("want 1 ready entry (wh-job-1), got %d entries", len(ready))
+	}
+
+	// 3. Update retry failure (next backoff)
+	nextSched := now + 5000
+	if err := store.UpdateRetryFailure(ctx, "wh-job-1", nextSched, 500, "internal error"); err != nil {
+		t.Fatalf("UpdateRetryFailure: %v", err)
+	}
+
+	// Now scheduled_at > now, so it should not be acquired
+	readyAfter, err := store.AcquireNextRetry(ctx, now, 10)
+	if err != nil {
+		t.Fatalf("AcquireNextRetry after backoff: %v", err)
+	}
+	if len(readyAfter) != 0 {
+		t.Fatalf("expected 0 ready entries after backoff, got %d", len(readyAfter))
+	}
+
+	// 4. Mark dead letter
+	if err := store.MarkDeadLetter(ctx, "wh-job-1", 500, "exhausted retries"); err != nil {
+		t.Fatalf("MarkDeadLetter: %v", err)
+	}
+
+	failed, sending, deadLetter, err := store.CountByState(ctx)
+	if err != nil {
+		t.Fatalf("CountByState: %v", err)
+	}
+	if failed != 0 || sending != 0 || deadLetter != 1 {
+		t.Fatalf("want failed=0, sending=0, deadLetter=1, got %d, %d, %d", failed, sending, deadLetter)
+	}
+
+	// 5. Redrive
+	if err := store.Redrive(ctx, "wh-job-1", now); err != nil {
+		t.Fatalf("Redrive: %v", err)
+	}
+	readyRedrive, err := store.AcquireNextRetry(ctx, now, 10)
+	if err != nil {
+		t.Fatalf("AcquireNextRetry after redrive: %v", err)
+	}
+	if len(readyRedrive) != 1 {
+		t.Fatalf("want 1 ready entry after redrive, got %d", len(readyRedrive))
+	}
+
+	// 5b. Test RestoreStuck: when acquired, entry became 'sending'. RestoreStuck should move it back to 'failed'
+	restored, err := store.RestoreStuck(ctx, now)
+	if err != nil {
+		t.Fatalf("RestoreStuck: %v", err)
+	}
+	if restored != 1 {
+		t.Fatalf("expected 1 restored entry, got %d", restored)
+	}
+
+	// Re-acquire for step 6
+	readyReacquired, err := store.AcquireNextRetry(ctx, now, 10)
+	if err != nil || len(readyReacquired) != 1 {
+		t.Fatalf("AcquireNextRetry after RestoreStuck failed: %v, count=%d", err, len(readyReacquired))
+	}
+
+	// 6. Delete on success
+	if err := store.DeleteSuccess(ctx, "wh-job-1"); err != nil {
+		t.Fatalf("DeleteSuccess: %v", err)
+	}
+
+	got, err := store.GetByID(ctx, "wh-job-1")
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("expected nil after delete, got %+v", got)
 	}
 }

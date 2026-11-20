@@ -816,6 +816,34 @@ This should remain compatible with the queue and correlation architecture.
 
 ---
 
+## Outbound Webhook Forwarding
+
+The relay supports outbound event forwarding (webhooks) to push matching Matrix events proactively to external HTTP endpoints, eliminating client-side polling loops.
+
+### Zero-DB Happy Path Architecture
+
+Outbound webhook dispatching operates on a **Zero-DB Happy Path** model:
+
+* **Happy path (HTTP 2xx):** When an inbound Matrix event matches a webhook filter, the dispatcher attempts HTTP delivery in-memory. If delivery succeeds (`2xx`), **zero database writes occur**, preserving SQLite throughput and avoiding table bloat.
+* **Failure path (HTTP 5xx, timeout, network error):** If the initial attempt fails or times out, the delivery job is immediately committed to SQLite (`webhook_queue`) with `state = 'failed'` and an exponential backoff timestamp.
+* **Durable retries & recovery:** A background worker pool retries failed jobs according to exponential backoff with jitter. On process restart, pending retry jobs are recovered from SQLite.
+* **Dead-letter queue:** Deliveries that exceed `max_retries` transition to `dead_letter` for operator inspection and manual redrive via `matfixctl`. Non-transient client errors (`4xx`) are immediately marked `dead_letter` without looping.
+
+### Configuration & File Synchronization
+
+* **Source of truth:** Webhook rules reside in a dedicated human-readable YAML file (`webhooks.yaml`), referenced by `config.yaml`.
+* **Dual Mutation Model:**
+  * **Admin API / `matfixctl`:** Mutates `webhooks.yaml` via atomic file rename (`webhooks.yaml.tmp` -> `webhooks.yaml`), immediately reloading active in-memory rules.
+  * **Manual disk edits:** A filesystem watcher (`fsnotify`) detects external edits to `webhooks.yaml`, validates the new rules, and reloads them without requiring daemon restarts.
+
+### Security Contract
+
+* **Payload signing:** If a webhook specifies a `secret`, outbound requests include an `X-Matfix-Signature-256: sha256=<hex>` HMAC-SHA256 signature computed over the request body.
+* **Header injection:** Webhooks support custom static headers (e.g. `Authorization: Bearer <token>`).
+* **Delivery tracking:** Outbound requests include `X-Matfix-Delivery-ID`, `X-Matfix-Webhook-ID`, `X-Matfix-Event-Type`, and `X-Matfix-Account-ID`.
+
+---
+
 ## Long-Term Architectural Principle
 
 Future extensibility must not compromise:

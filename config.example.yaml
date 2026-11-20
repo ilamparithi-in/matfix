@@ -63,3 +63,9 @@ logging:
 observability:
   metrics_bind: "0.0.0.0:9090"   # Prometheus scrape endpoint
   health_path: "/health"          # Prefix for /health/live and /health/ready
+
+# Outbound webhooks forwarding configuration.
+webhooks:
+  file: "webhooks.yaml"           # Path to dedicated webhooks rule file
+  concurrency: 4                  # In-flight delivery worker concurrency
+  default_timeout: "10s"          # Default HTTP timeout for webhook dispatch

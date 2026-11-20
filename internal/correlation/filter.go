@@ -110,17 +110,15 @@ type compiledFilterNode struct {
 	not   *compiledFilterNode
 }
 
-// # compiledFilter
-
-// compiledFilter is the top-level evaluated filter.
-type compiledFilter struct {
+// CompiledFilter is the top-level evaluated filter.
+type CompiledFilter struct {
 	root *compiledFilterNode
 }
 
-// # Validation
+type compiledFilter = CompiledFilter
 
-// validate checks a FilterNode for semantic errors before compilation.
-func validate(n *FilterNode) error {
+// Validate checks a FilterNode for semantic errors before compilation.
+func Validate(n *FilterNode) error {
 	if n == nil {
 		return nil
 	}
@@ -144,16 +142,20 @@ func validate(n *FilterNode) error {
 		}
 	}
 	for _, child := range n.AllOf {
-		if err := validate(child); err != nil {
+		if err := Validate(child); err != nil {
 			return err
 		}
 	}
 	for _, child := range n.AnyOf {
-		if err := validate(child); err != nil {
+		if err := Validate(child); err != nil {
 			return err
 		}
 	}
-	return validate(n.Not)
+	return Validate(n.Not)
+}
+
+func validate(n *FilterNode) error {
+	return Validate(n)
 }
 
 // # Compilation
@@ -205,24 +207,29 @@ func compileNode(n *FilterNode) (*compiledFilterNode, error) {
 	return cn, nil
 }
 
-// newCompiledFilter validates and compiles a *FilterNode tree.
-// A nil root produces a filter that matches every event for the given account.
-func newCompiledFilter(root *FilterNode) (*compiledFilter, error) {
-	if err := validate(root); err != nil {
+// NewCompiledFilter validates and compiles a *FilterNode tree.
+// A nil root produces a filter that matches every event.
+func NewCompiledFilter(root *FilterNode) (*CompiledFilter, error) {
+	if err := Validate(root); err != nil {
 		return nil, err
 	}
 	cn, err := compileNode(root)
 	if err != nil {
 		return nil, err
 	}
-	return &compiledFilter{root: cn}, nil
+	return &CompiledFilter{root: cn}, nil
+}
+
+func newCompiledFilter(root *FilterNode) (*CompiledFilter, error) {
+	return NewCompiledFilter(root)
 }
 
 // # Matching
 
-// matches reports whether env satisfies the filter for the given accountID.
-func (cf *compiledFilter) matches(env bus.EventEnvelope, accountID string) bool {
-	if env.AccountID != accountID {
+// Matches reports whether env satisfies the filter for the given accountID.
+// If accountID is empty, the account check is bypassed (matches any account).
+func (cf *CompiledFilter) Matches(env bus.EventEnvelope, accountID string) bool {
+	if accountID != "" && env.AccountID != accountID {
 		return false
 	}
 	if cf.root == nil {
@@ -231,15 +238,48 @@ func (cf *compiledFilter) matches(env bus.EventEnvelope, accountID string) bool 
 	return cf.root.matchesEnvelope(env)
 }
 
+// MatchesEnvelope reports whether env satisfies the filter predicates.
+func (cf *CompiledFilter) MatchesEnvelope(env bus.EventEnvelope) bool {
+	if cf.root == nil {
+		return true
+	}
+	return cf.root.matchesEnvelope(env)
+}
+
+func (cf *CompiledFilter) matches(env bus.EventEnvelope, accountID string) bool {
+	return cf.Matches(env, accountID)
+}
+
+func matrixEventType(t bus.EventType) string {
+	switch t {
+	case bus.EventInboundMessage:
+		return "m.room.message"
+	case bus.EventInboundReaction:
+		return "m.reaction"
+	case bus.EventInboundEdit:
+		return "m.room.message.edit"
+	case bus.EventInboundRedaction:
+		return "m.room.redaction"
+	case bus.EventInboundMembership:
+		return "m.room.member"
+	case bus.EventInboundReceipt:
+		return "m.receipt"
+	default:
+		return string(t)
+	}
+}
+
 // matchesEnvelope evaluates all predicates for this node (all ANDed).
 func (n *compiledFilterNode) matchesEnvelope(env bus.EventEnvelope) bool {
 	// Room set filter
 	if n.roomID.active() && !n.roomID.matches(env.RoomID) {
 		return false
 	}
-	// Event type set filter
-	if n.eventType.active() && !n.eventType.matches(string(env.Type)) {
-		return false
+	// Event type set filter (supports both internal bus.EventType and standard Matrix event types)
+	if n.eventType.active() {
+		if !n.eventType.matches(string(env.Type)) && !n.eventType.matches(matrixEventType(env.Type)) {
+			return false
+		}
 	}
 	// Payload-specific predicates (inapplicable-predicate semantics)
 	if !n.matchesPayload(env) {

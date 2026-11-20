@@ -14,6 +14,7 @@ import (
 	"github.com/ilamparithi-in/matfix/internal/account"
 	adminroutes "github.com/ilamparithi-in/matfix/internal/admin/routes"
 	"github.com/ilamparithi-in/matfix/internal/persistence"
+	"github.com/ilamparithi-in/matfix/internal/webhook"
 )
 
 // # Config
@@ -37,6 +38,9 @@ type Config struct {
 
 	// Correlation is used for live in-memory subscription inspection.
 	Correlation adminroutes.SubscriptionCounter
+
+	// Webhooks manages outbound webhook rules and queue.
+	Webhooks *webhook.WebhookManager
 }
 
 // # Server
@@ -65,6 +69,16 @@ func New(cfg Config) *Server {
 	r.Get("/accounts", adminroutes.AccountsHandler(cfg.Accounts))
 	r.Get("/queue", adminroutes.QueueHandler(cfg.Accounts, cfg.QueueStore))
 	r.Get("/subscriptions", adminroutes.SubscriptionsHandler(cfg.Correlation, cfg.CorrStore))
+
+	// Webhooks management and inspection.
+	r.Get("/webhooks", adminroutes.ListWebhooksHandler(cfg.Webhooks))
+	r.Post("/webhooks", adminroutes.CreateWebhookHandler(cfg.Webhooks))
+	r.Get("/webhooks/{id}", adminroutes.GetWebhookHandler(cfg.Webhooks))
+	r.Delete("/webhooks/{id}", adminroutes.DeleteWebhookHandler(cfg.Webhooks))
+	r.Post("/webhooks/reload", adminroutes.ReloadWebhooksHandler(cfg.Webhooks))
+	r.Get("/webhooks/queue", adminroutes.WebhookQueueHandler(cfg.Webhooks))
+	r.Post("/webhooks/queue/redrive/{id}", adminroutes.RedriveWebhookHandler(cfg.Webhooks))
+	r.Post("/webhooks/queue/redrive-all", adminroutes.RedriveAllWebhooksHandler(cfg.Webhooks))
 
 	return &Server{
 		httpServer: &http.Server{

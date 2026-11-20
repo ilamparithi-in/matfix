@@ -13,31 +13,31 @@ import (
 // Include is a whitelist (nil = unrestricted). Exclude is a blacklist (nil = no exclusions).
 // Both may be set simultaneously; exclude takes precedence.
 type StringSetFilter struct {
-	Include []string
-	Exclude []string
+	Include []string `json:"include,omitempty" yaml:"include,omitempty"`
+	Exclude []string `json:"exclude,omitempty" yaml:"exclude,omitempty"`
 }
 
 // FilterNode is a recursive filter expression.
 // All set fields within a node are ANDed. An empty node (all fields zero/nil) always matches.
 type FilterNode struct {
 	// Set filters
-	SenderID  *StringSetFilter
-	RoomID    *StringSetFilter
-	EventType *StringSetFilter
+	SenderID  *StringSetFilter `json:"sender_id,omitempty" yaml:"sender_id,omitempty"`
+	RoomID    *StringSetFilter `json:"room_id,omitempty" yaml:"room_id,omitempty"`
+	EventType *StringSetFilter `json:"event_type,omitempty" yaml:"event_type,omitempty"`
 
 	// Scalar predicates (zero value = unset/inactive)
-	InReplyTo        string
-	BodyRegex        string
-	ReactionKey      string
-	RelatesToEventID string
-	HasAttachment    *bool
-	MinTimestamp     int64 // Unix ms; 0 = unset
-	MaxTimestamp     int64 // Unix ms; 0 = unset
+	InReplyTo        string `json:"in_reply_to,omitempty" yaml:"in_reply_to,omitempty"`
+	BodyRegex        string `json:"body_regex,omitempty" yaml:"body_regex,omitempty"`
+	ReactionKey      string `json:"reaction_key,omitempty" yaml:"reaction_key,omitempty"`
+	RelatesToEventID string `json:"relates_to_event_id,omitempty" yaml:"relates_to_event_id,omitempty"`
+	HasAttachment    *bool  `json:"has_attachment,omitempty" yaml:"has_attachment,omitempty"`
+	MinTimestamp     int64  `json:"min_timestamp,omitempty" yaml:"min_timestamp,omitempty"`
+	MaxTimestamp     int64  `json:"max_timestamp,omitempty" yaml:"max_timestamp,omitempty"`
 
 	// Combinators
-	AllOf []*FilterNode
-	AnyOf []*FilterNode
-	Not   *FilterNode
+	AllOf []*FilterNode `json:"all_of,omitempty" yaml:"all_of,omitempty"`
+	AnyOf []*FilterNode `json:"any_of,omitempty" yaml:"any_of,omitempty"`
+	Not   *FilterNode   `json:"not,omitempty" yaml:"not,omitempty"`
 }
 
 // # Requests

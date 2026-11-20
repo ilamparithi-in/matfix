@@ -1,0 +1,36 @@
+## matfix - example webhooks configuration
+## Copy to webhooks.yaml or point to this file via `webhooks.file` in config.yaml.
+## Changes to this file are automatically detected and reloaded live without restart.
+
+webhooks:
+  # Deploy hook: forward deploy commands from ops room to local runner (e.g. adnanh/webhook)
+  - id: "deploy-hook"
+    url: "http://127.0.0.1:9000/hooks/deploy-staging"
+    secret: "whsec_supersecretkey123" # Generates HMAC-SHA256 signature in X-Matfix-Signature-256
+    headers:
+      Authorization: "Bearer token-abc-xyz"
+      X-Environment: "staging"
+    timeout: "10s"
+    filter:
+      rooms: ["!ops:example.com"]
+      event_types: ["m.room.message"]
+      contains: "!deploy"
+    retry_policy:
+      max_retries: 5
+      initial_interval: "5s"
+      max_interval: "5m"
+
+  # Alert hook: forward all alerts to an incident response endpoint
+  - id: "alerts-forwarder"
+    url: "https://alerts.internal.net/v1/matrix"
+    headers:
+      X-Source: "matfix"
+    timeout: "5s"
+    filter:
+      rooms: ["!alerts:example.com"]
+      event_types: ["m.room.message"]
+      pattern: "(?i)(CRITICAL|FATAL|ALERT)"
+    retry_policy:
+      max_retries: 3
+      initial_interval: "2s"
+      max_interval: "1m"

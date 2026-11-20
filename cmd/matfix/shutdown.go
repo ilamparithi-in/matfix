@@ -9,6 +9,7 @@ import (
 	"github.com/ilamparithi-in/matfix/internal/admin"
 	"github.com/ilamparithi-in/matfix/internal/api"
 	"github.com/ilamparithi-in/matfix/internal/persistence"
+	"github.com/ilamparithi-in/matfix/internal/webhook"
 	"github.com/ilamparithi-in/matfix/internal/worker"
 )
 
@@ -21,12 +22,14 @@ const shutdownTimeout = 30 * time.Second
 //
 //  1. Stop the HTTP API server - no new requests accepted after this point.
 //  2. Stop the admin UNIX socket server.
-//  3. Drain the worker pool - wait for in-flight send jobs to finish.
-//  4. Stop all account sync loops and per-account components.
-//  5. Close the database connection.
+//  3. Stop the webhook manager and retry worker.
+//  4. Drain the worker pool - wait for in-flight send jobs to finish.
+//  5. Stop all account sync loops and per-account components.
+//  6. Close the database connection.
 func shutdown(
 	apiSrv *api.Server,
 	adminSrv *admin.Server,
+	webhookMgr *webhook.WebhookManager,
 	workers *worker.WorkerPool,
 	accounts *account.AccountManager,
 	db *persistence.DB,
@@ -40,6 +43,11 @@ func shutdown(
 	slog.Info("matfix: stopping admin socket server")
 	if err := adminSrv.Shutdown(ctx); err != nil {
 		slog.Error("matfix: admin server shutdown error", "error", err)
+	}
+
+	slog.Info("matfix: stopping webhook manager")
+	if webhookMgr != nil {
+		webhookMgr.Stop()
 	}
 
 	slog.Info("matfix: draining worker pool")

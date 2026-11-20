@@ -63,6 +63,11 @@ func defaults() *Config {
 			MetricsBind: ":9090",
 			HealthPath:  "/health",
 		},
+		Webhooks: WebhookConfig{
+			File:           "webhooks.yaml",
+			Concurrency:    4,
+			DefaultTimeout: Duration(10 * time.Second),
+		},
 	}
 }
 
@@ -92,5 +97,8 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v, ok := os.LookupEnv("MATFIX_OBSERVABILITY_HEALTH_PATH"); ok {
 		c.Observability.HealthPath = v
+	}
+	if v, ok := os.LookupEnv("MATFIX_WEBHOOKS_FILE"); ok {
+		c.Webhooks.File = v
 	}
 }
