@@ -54,7 +54,9 @@ func (f *FileManager) Load() ([]WebhookRule, error) {
 	return wf.Webhooks, nil
 }
 
-// Save writes rules atomically to disk.
+// Save writes rules atomically to disk. If atomic rename fails (e.g. when the
+// target file is a Docker bind mount or its parent directory is on a read-only
+// filesystem), it falls back to a direct write to the file.
 func (f *FileManager) Save(rules []WebhookRule) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -66,36 +68,45 @@ func (f *FileManager) Save(rules []WebhookRule) error {
 	}
 
 	dir := filepath.Dir(f.path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("webhook: mkdir %q: %w", dir, err)
-	}
+	_ = os.MkdirAll(dir, 0755)
 
+	// Attempt atomic save via temporary file in the same directory.
 	tmpPath := filepath.Join(dir, fmt.Sprintf(".webhooks.%s.tmp", uuid.New().String()))
 	tmpFile, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err == nil {
+		writeErr := func() error {
+			if _, err := tmpFile.Write(data); err != nil {
+				_ = tmpFile.Close()
+				return err
+			}
+			if err := tmpFile.Sync(); err != nil {
+				_ = tmpFile.Close()
+				return err
+			}
+			return tmpFile.Close()
+		}()
+
+		if writeErr == nil {
+			if err := os.Rename(tmpPath, f.path); err == nil {
+				return nil
+			}
+		}
+		_ = os.Remove(tmpPath)
+	}
+
+	// Fallback to direct write (handles bind-mounted files where rename yields EBUSY
+	// or where the parent directory is read-only).
+	targetFile, err := os.OpenFile(f.path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
-		return fmt.Errorf("webhook: create tmp file: %w", err)
+		return fmt.Errorf("webhook: write file %q: %w", f.path, err)
 	}
+	defer targetFile.Close()
 
-	if _, err := tmpFile.Write(data); err != nil {
-		tmpFile.Close()
-		os.Remove(tmpPath)
-		return fmt.Errorf("webhook: write tmp file: %w", err)
+	if _, err := targetFile.Write(data); err != nil {
+		return fmt.Errorf("webhook: write file %q: %w", f.path, err)
 	}
-
-	if err := tmpFile.Sync(); err != nil {
-		tmpFile.Close()
-		os.Remove(tmpPath)
-		return fmt.Errorf("webhook: sync tmp file: %w", err)
-	}
-
-	if err := tmpFile.Close(); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("webhook: close tmp file: %w", err)
-	}
-
-	if err := os.Rename(tmpPath, f.path); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("webhook: atomic rename: %w", err)
+	if err := targetFile.Sync(); err != nil {
+		return fmt.Errorf("webhook: sync file %q: %w", f.path, err)
 	}
 
 	return nil

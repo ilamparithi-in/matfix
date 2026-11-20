@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -23,6 +24,8 @@ func Load(path string) (*Config, error) {
 	}
 
 	applyEnvOverrides(cfg)
+
+	resolvePaths(path, cfg)
 
 	return cfg, nil
 }
@@ -100,5 +103,17 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v, ok := os.LookupEnv("MATFIX_WEBHOOKS_FILE"); ok {
 		c.Webhooks.File = v
+	}
+}
+
+// resolvePaths resolves relative file paths in cfg against the directory of configPath.
+// Absolute paths are left unchanged.
+func resolvePaths(configPath string, cfg *Config) {
+	configDir := filepath.Dir(configPath)
+	if cfg.Webhooks.File == "" {
+		cfg.Webhooks.File = "webhooks.yaml"
+	}
+	if !filepath.IsAbs(cfg.Webhooks.File) {
+		cfg.Webhooks.File = filepath.Join(configDir, cfg.Webhooks.File)
 	}
 }

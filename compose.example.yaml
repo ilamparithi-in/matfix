@@ -2,6 +2,7 @@
 ##
 ## Quick start:
 ##   1. cp config.example.yaml config.yaml  && edit config.yaml
+##      touch webhooks.yaml  # or: cp webhooks.example.yaml webhooks.yaml
 ##   2. docker compose up -d
 ##   3. docker compose exec matfix matfixctl keys create --name my-key --routes send,receive,ask
 ##
@@ -20,6 +21,10 @@ services:
     # Config file - copy config.example.yaml -> config.yaml and fill in your values.
     volumes:
       - ./config.yaml:/etc/matfix/config.yaml:ro
+      # Webhooks rules file (resolved relative to config.yaml -> /etc/matfix/webhooks.yaml).
+      # Explicitly mounted as :rw - webhooks.yaml MUST be rw if you plan on using the
+      # admin API (e.g. 'matfixctl webhooks add/delete') to mutate webhook rules at runtime.
+      - ./webhooks.yaml:/etc/matfix/webhooks.yaml:rw
       # SQLite database - persist across restarts.
       - matfix-data:/data
       # Admin UNIX socket - use 'docker compose exec matfix matfixctl' to connect.
@@ -50,7 +55,7 @@ services:
       - no-new-privileges:true
 
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health/ready"]
+      test: [ "CMD", "curl", "-fsS", "http://localhost:8080/health/ready" ]
       interval: 30s
       timeout: 5s
       retries: 3

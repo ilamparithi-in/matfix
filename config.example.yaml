@@ -66,6 +66,6 @@ observability:
 
 # Outbound webhooks forwarding configuration.
 webhooks:
-  file: "webhooks.yaml"           # Path to dedicated webhooks rule file
+  file: "webhooks.yaml"           # Path to dedicated webhooks rule file (relative to this config file, or absolute)
   concurrency: 4                  # In-flight delivery worker concurrency
   default_timeout: "10s"          # Default HTTP timeout for webhook dispatch

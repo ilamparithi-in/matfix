@@ -505,3 +505,38 @@ func TestWebhook_FilePersistence(t *testing.T) {
 		t.Error("rule should be deleted from memory")
 	}
 }
+
+func TestFileManager_Save_ReadOnlyDirFallback(t *testing.T) {
+	dir := t.TempDir()
+	rulesFile := filepath.Join(dir, "webhooks.yaml")
+	if err := os.WriteFile(rulesFile, []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Make directory read-only so creating temp files inside it fails,
+	// simulating Docker containers where rootfs is read-only and webhooks.yaml is a bind-mount.
+	if err := os.Chmod(dir, 0555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0755) })
+
+	fm := webhook.NewFileManager(rulesFile)
+	rules := []webhook.WebhookRule{
+		{
+			ID:  "fallback-test",
+			URL: "https://example.com/hook",
+		},
+	}
+
+	if err := fm.Save(rules); err != nil {
+		t.Fatalf("Save with read-only dir fallback failed: %v", err)
+	}
+
+	loaded, err := fm.Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if len(loaded) != 1 || loaded[0].ID != "fallback-test" {
+		t.Fatalf("loaded rules mismatch: got %+v", loaded)
+	}
+}

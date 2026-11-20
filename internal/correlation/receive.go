@@ -106,9 +106,9 @@ func (m *CorrelationManager) resolveReceive(r *activeReceive, state string) {
 		copy(events, r.collected)
 		r.mu.Unlock()
 
+		m.removeReceive(r)
 		r.result <- events
 		close(r.done)
-		m.removeReceive(r)
 	})
 }
 

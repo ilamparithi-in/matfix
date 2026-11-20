@@ -1,7 +1,9 @@
 package config_test
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/ilamparithi-in/matfix/internal/config"
@@ -167,5 +169,82 @@ func TestLoad_InvalidYAML(t *testing.T) {
 	_, err = config.Load(f.Name())
 	if err == nil {
 		t.Fatal("expected error for invalid YAML, got nil")
+	}
+}
+
+func TestLoad_WebhooksFileResolution(t *testing.T) {
+	dir := t.TempDir()
+
+	// 1. Explicit relative path resolves relative to config file directory
+	relConf := filepath.Join(dir, "sub", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(relConf), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(relConf, []byte(`accounts:
+  - id: test
+    homeserver_url: https://matrix.example.com
+    user_id: "@bot:example.com"
+    access_token: token123
+webhooks:
+  file: custom-webhooks.yaml
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := config.Load(relConf)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	expectedRel := filepath.Join(dir, "sub", "custom-webhooks.yaml")
+	if cfg.Webhooks.File != expectedRel {
+		t.Errorf("webhooks.file relative resolution: got %q, want %q", cfg.Webhooks.File, expectedRel)
+	}
+
+	// 2. Default webhooks.yaml also resolves relative to config file directory
+	defConf := filepath.Join(dir, "defaults", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(defConf), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(defConf, []byte(`accounts:
+  - id: test
+    homeserver_url: https://matrix.example.com
+    user_id: "@bot:example.com"
+    access_token: token123
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgDef, err := config.Load(defConf)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	expectedDef := filepath.Join(dir, "defaults", "webhooks.yaml")
+	if cfgDef.Webhooks.File != expectedDef {
+		t.Errorf("webhooks.file default resolution: got %q, want %q", cfgDef.Webhooks.File, expectedDef)
+	}
+
+	// 3. Absolute path is preserved as-is
+	absFile := filepath.Join(dir, "other", "webhooks.yaml")
+	absConf := filepath.Join(dir, "abs", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(absConf), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(absConf, []byte(fmt.Sprintf(`accounts:
+  - id: test
+    homeserver_url: https://matrix.example.com
+    user_id: "@bot:example.com"
+    access_token: token123
+webhooks:
+  file: %s
+`, absFile)), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgAbs, err := config.Load(absConf)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfgAbs.Webhooks.File != absFile {
+		t.Errorf("webhooks.file absolute path preservation: got %q, want %q", cfgAbs.Webhooks.File, absFile)
 	}
 }
